@@ -3,6 +3,10 @@
 Thanks for your interest in contributing! This project is a work in progress, and
 all feedback, bug reports, and pull requests are welcome.
 
+> 🤖 AI-assisted contributions and agent-generated PRs are explicitly welcome.
+> Agents and humans follow the same workflow below — keep changes small,
+> end-to-end, and green.
+
 ## Development setup
 
 1. **Clone the repository**:
@@ -38,9 +42,29 @@ all feedback, bug reports, and pull requests are welcome.
    cargo bench
    ```
 
+Copy-paste quick setup:
+
+```bash
+git clone git@github.com:rcasia/lua-mutation-test.git
+cd lua-mutation-test
+./scripts/fetch-tree-sitter-lua.sh
+cargo build
+cargo test
+```
+
+## How to report bugs and suggest features
+
+- **Bug reports**: open an issue with the Bug report template — include
+  reproduction steps, expected vs actual behavior, `lua-mutation-test --version`,
+  OS, and Lua version. See [SECURITY.md](SECURITY.md) for private disclosure.
+- **Feature requests**: open an issue with the Feature request template —
+  describe the problem, proposed solution, and alternatives.
+- Search existing issues first to avoid duplicates.
+- For questions, use issues with a clear title prefix like `question:`.
+
 ## Workflow
 
-This project follows **trunk-based development**:
+This project follows **trunk-based development** (agent-friendly):
 
 - Work on `main` or on a very short-lived branch rebased onto `main`.
 - Keep commits small and focused.
@@ -48,6 +72,8 @@ This project follows **trunk-based development**:
   necessary layers rather than building horizontal layers in isolation.
 - Pull/rebase `origin/main` before pushing.
 - Ensure CI is green before and after your push.
+- Agents: run `cargo fmt --check`, `cargo clippy -- -D warnings`, and
+  `cargo test` before opening a PR; link the related issue in the PR body.
 
 ## Commit messages
 

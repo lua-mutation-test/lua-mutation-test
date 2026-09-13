@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible bug in lua-mutation-test.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please see [CONTRIBUTING.md](../../CONTRIBUTING.md) for workflow guidelines.
+        Search existing issues first to avoid duplicates.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `lmut --version` or `lua-mutation-test --version`.
+      placeholder: 0.0.2
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal Lua snippet, config, and test command to reproduce.
+      placeholder: |
+        1. `lmut run lua --test-command 'busted'`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+      description: What did you expect? What happened instead?
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Rust toolchain (`rustc --version`), Lua version.
+      placeholder: macOS 15, rustc 1.80, lua5.4
+    validations:
+      required: false

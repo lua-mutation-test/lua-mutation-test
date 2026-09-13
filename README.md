@@ -1,21 +1,50 @@
 # lua-mutation-test
 
-> ⚠️ **Work in Progress** ⚠️
->
-> This project is in early development and is **not yet ready for production use**.
-> APIs, CLI flags, and behavior may change at any time until a stable release is published.
-> Contributions and feedback are welcome, but please expect rough edges.
+> Find the bugs your tests miss — mutation testing for Lua and Neovim plugins.
+
+[![Rust](https://github.com/rcasia/lua-mutation-test/actions/workflows/rust.yml/badge.svg)](https://github.com/rcasia/lua-mutation-test/blob/main/.github/workflows/rust.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/rcasia/lua-mutation-test)](https://github.com/rcasia/lua-mutation-test/releases)
+[![License](https://img.shields.io/github/license/rcasia/lua-mutation-test)](LICENSE)
+[![codecov](https://codecov.io/gh/rcasia/lua-mutation-test/branch/main/graph/badge.svg)](https://codecov.io/gh/rcasia/lua-mutation-test)
+[![Docs](https://img.shields.io/badge/docs-gh--pages-blue)](https://rcasia.github.io/lua-mutation-test/)
 
 A mutation testing tool for Lua, written in Rust.
 
 `lua-mutation-test` parses Lua source code with [tree-sitter](https://tree-sitter.github.io/tree-sitter/),
 generates mutants, runs your test suite against them, and reports mutation scores.
 
----
+## Why mutation testing?
 
-[![Rust](https://github.com/rcasia/lua-mutation-test/actions/workflows/rust.yml/badge.svg)](https://github.com/rcasia/lua-mutation-test/blob/main/.github/workflows/rust.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/rcasia/lua-mutation-test)](https://github.com/rcasia/lua-mutation-test/releases)
-[![Docs](https://img.shields.io/badge/docs-gh--pages-blue)](https://rcasia.github.io/lua-mutation-test/)
+100% line coverage can still miss bugs — especially in Neovim plugins where a
+flipped condition (`==` vs `~=`, `and` vs `or`) or an off-by-one keeps every
+line green while silently breaking behavior.
+
+`lua-mutation-test` seeds those small faults into your code and checks whether
+your tests catch them. Survivors point at weak tests; a high mutation score
+means your suite actually guards behavior.
+
+## Quick start for a Neovim plugin codebase
+
+```bash
+cargo install lua-mutation-test
+cd ~/plugins/my-nvim-plugin
+lmut run lua --test-command 'busted'
+```
+
+Example output:
+
+```text
+Mutation score: 87.5% (42 killed, 6 survived, 0 timed out)
+Survived: lua/init.lua:42:5 — changed `==` to `~=`
+Survived: lua/config.lua:17:3 — removed call to `vim.notify`
+```
+
+Works with [lux](https://github.com/nvim-neorocks/lux) and
+[rocks.nvim](https://github.com/nvim-neorocks/rocks.nvim) workflows — just point
+`--test-command` at `busted`, `plenary`/`mini.test`, or your usual runner.
+
+> 🤖 AI-assisted contributions welcome! Agent-generated PRs are first-class here —
+> see [CONTRIBUTING.md](CONTRIBUTING.md) for the agentic workflow.
 
 ## Features
 
