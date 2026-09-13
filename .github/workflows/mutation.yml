@@ -19,22 +19,33 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Fetch tree-sitter-lua grammar
         run: ./scripts/fetch-tree-sitter-lua.sh
-      - name: Build
-        run: cargo build --verbose
-      - name: Run mutation testing (Stryker report)
-        working-directory: tests/fixtures/simple_math
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      - name: Run cargo-mutants on Rust code
+        id: mutants
+        # Missed mutants are tracked on the Stryker dashboard, not gated here.
+        continue-on-error: true
         run: |
-          "$GITHUB_WORKSPACE/target/debug/lmut" run \
-            --report-format stryker \
-            --report-output "$GITHUB_WORKSPACE/mutation-testing-report.json" || true
-          test -f "$GITHUB_WORKSPACE/mutation-testing-report.json"
+          cargo mutants -v --in-place -- -- --skip watch
+      - name: Convert to Stryker report
+        if: always()
+        run: |
+          test -f mutants.out/outcomes.json
+          python3 scripts/cargo-mutants-to-stryker.py mutants.out "$GITHUB_WORKSPACE" mutation-testing-report.json
       - name: Upload Stryker report artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mutation-testing-report
-          path: mutation-testing-report.json
+          path: |
+            mutation-testing-report.json
+            mutants.out/outcomes.json
+            mutants.out/caught.txt
+            mutants.out/missed.txt
+            mutants.out/timeout.txt
+            mutants.out/unviable.txt
       - name: Publish to Stryker dashboard
-        if: env.STRYKER_DASHBOARD_API_KEY != ''
+        if: always()
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
         run: |

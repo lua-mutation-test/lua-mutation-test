@@ -170,6 +170,12 @@ curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/lua-mut
   -d @mutation-testing-report.json
 ```
 
+The badge at the top of this README shows the mutation score of the Rust
+codebase itself: CI runs [cargo-mutants](https://mutants.rs/) on every push to
+`main`, converts `mutants.out/outcomes.json` with
+`scripts/cargo-mutants-to-stryker.py`, and publishes the same Stryker-schema
+report (see `.github/workflows/mutation.yml`).
+
 ## Architecture
 
 - **Rust CLI**: Entry point and orchestration.
