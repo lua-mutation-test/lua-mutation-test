@@ -41,7 +41,7 @@ lmut run [PATH] [OPTIONS]
 |--------|-------------|
 | `--test-command <COMMAND>` | Custom shell command used to run tests. |
 | `--timeout <SECONDS>` | Timeout in seconds for each mutant test run. |
-| `--report-format <FORMAT>` | Report format: `summary`, `per-mutant`, `json`, `ctrf`, `html`. |
+| `--report-format <FORMAT>` | Report format: `summary`, `per-mutant`, `json`, `ctrf`, `html`, `stryker`. |
 | `--report-output <PATH>` | Write the generated report to this path. |
 
 #### Examples
@@ -50,6 +50,7 @@ lmut run [PATH] [OPTIONS]
 lmut run src
 lmut run file.lua --test-command 'busted' --timeout 30 --report-format json
 lmut run src --report-format ctrf --report-output ctrf-report.json
+lmut run src --report-format stryker --report-output mutation-testing-report.json
 ```
 
 ### `list-mutants`

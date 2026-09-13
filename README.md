@@ -157,6 +157,17 @@ Generate reports after a run:
 lmut run src --report-format json --report-output report.json
 lmut run src --report-format ctrf --report-output ctrf-report.json
 lmut run src --report-format html --report-output report.html
+lmut run src --report-format stryker --report-output mutation-testing-report.json
+```
+
+Publish mutation results to the Stryker dashboard (`dashboard.stryker-mutator.io`):
+
+```bash
+export STRYKER_DASHBOARD_API_KEY=xxx
+curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/rcasia/lua-mutation-test/main" \
+  -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d @mutation-testing-report.json
 ```
 
 ## Architecture
@@ -165,7 +176,7 @@ lmut run src --report-format html --report-output report.html
 - **tree-sitter Lua parser**: Vendored grammar used to parse Lua source into an AST.
 - **Mutant generator**: Applies configurable mutation operators and detects likely-equivalent mutants with static heuristics.
 - **Test runner**: Runs the test suite against each mutant in an isolated temporary copy of the project.
-- **Reporter**: Computes mutation scores and emits summary, per-mutant, JSON, CTRF, or HTML reports.
+- **Reporter**: Computes mutation scores and emits summary, per-mutant, JSON, CTRF, HTML, or Stryker (`mutation-testing-report.json`, schema v2) reports.
 
 See [docs/architecture.md](docs/architecture.md) for more details, including the
 list of known equivalent-mutant patterns.

@@ -57,7 +57,8 @@ scores.
 ### Reporter
 
 - Aggregates results into mutation scores.
-- Generates CLI summaries, JSON reports, and HTML reports.
+- Generates CLI summaries, JSON, CTRF, HTML, and Stryker (`mutation-testing-report.json`, schema v2) reports.
+- Stryker status mapping: `Killed` → `Killed`, `Survived` → `Survived`, `Timeout` → `Timeout`, `Error` → `RuntimeError`, `Equivalent` → `Ignored`. Locations use 1-based line/column; thresholds default to `{high: 80, low: 60}`.
 
 ## Data flow
 

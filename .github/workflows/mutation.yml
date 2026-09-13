@@ -1,0 +1,44 @@
+name: Mutation
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Fetch tree-sitter-lua grammar
+        run: ./scripts/fetch-tree-sitter-lua.sh
+      - name: Build
+        run: cargo build --verbose
+      - name: Run mutation testing (Stryker report)
+        working-directory: tests/fixtures/simple_math
+        run: |
+          "$GITHUB_WORKSPACE/target/debug/lmut" run \
+            --report-format stryker \
+            --report-output "$GITHUB_WORKSPACE/mutation-testing-report.json" || true
+          test -f "$GITHUB_WORKSPACE/mutation-testing-report.json"
+      - name: Upload Stryker report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-testing-report
+          path: mutation-testing-report.json
+      - name: Publish to Stryker dashboard
+        if: env.STRYKER_DASHBOARD_API_KEY != ''
+        env:
+          STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
+        run: |
+          curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/rcasia/lua-mutation-test/${GITHUB_REF_NAME}" \
+            -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @mutation-testing-report.json

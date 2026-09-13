@@ -19,6 +19,8 @@ pub enum ReportFormat {
     Ctrf,
     /// Self-contained HTML page.
     Html,
+    /// Stryker mutation-testing-report.json (schema v2).
+    Stryker,
 }
 
 impl std::str::FromStr for ReportFormat {
@@ -31,6 +33,7 @@ impl std::str::FromStr for ReportFormat {
             "json" => Ok(ReportFormat::Json),
             "ctrf" => Ok(ReportFormat::Ctrf),
             "html" => Ok(ReportFormat::Html),
+            "stryker" => Ok(ReportFormat::Stryker),
             _ => Err(format!("unknown report format: {s}")),
         }
     }
@@ -56,6 +59,7 @@ pub fn generate_report(
         ReportFormat::Json => json_report(data),
         ReportFormat::Ctrf => ctrf_report(data),
         ReportFormat::Html => html_report(data),
+        ReportFormat::Stryker => stryker_report(data),
     };
 
     if let Some(path) = output {
@@ -348,6 +352,216 @@ fn chrono_now() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| format!("{}.{:03}Z", d.as_secs(), d.subsec_millis()))
         .unwrap_or_else(|_| "0".to_string())
+}
+
+/// Stryker mutation-testing-report.json (schema v2).
+/// See https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema
+#[derive(Serialize, Deserialize)]
+struct StrykerReport {
+    #[serde(rename = "schemaVersion")]
+    schema_version: String,
+    thresholds: StrykerThresholds,
+    files: std::collections::BTreeMap<String, StrykerFile>,
+    #[serde(rename = "projectRoot", skip_serializing_if = "Option::is_none")]
+    project_root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    framework: Option<StrykerFramework>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerThresholds {
+    high: u8,
+    low: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerFramework {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerFile {
+    language: String,
+    source: String,
+    mutants: Vec<StrykerMutant>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerMutant {
+    id: String,
+    #[serde(rename = "mutatorName")]
+    mutator_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replacement: Option<String>,
+    location: StrykerLocation,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(rename = "statusReason", skip_serializing_if = "Option::is_none")]
+    status_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerLocation {
+    start: StrykerPosition,
+    end: StrykerPosition,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StrykerPosition {
+    line: usize,
+    column: usize,
+}
+
+fn stryker_status(result: &MutantResult) -> (&'static str, Option<String>) {
+    match result {
+        MutantResult::Killed { .. } => ("Killed", None),
+        MutantResult::Survived { .. } => ("Survived", None),
+        MutantResult::TimedOut { .. } => ("Timeout", None),
+        MutantResult::Error { reason, .. } => ("RuntimeError", Some(reason.clone())),
+        MutantResult::Equivalent { reason, .. } => ("Ignored", Some(reason.clone())),
+    }
+}
+
+fn stryker_location(source: Option<&str>, mutant: &crate::mutant::Mutant) -> StrykerLocation {
+    if let Some(text) = source {
+        let start = crate::position::byte_offset_to_position(text, mutant.start_byte);
+        let end = crate::position::byte_offset_to_position(text, mutant.end_byte);
+        if let (Some(s), Some(e)) = (start, end) {
+            return StrykerLocation {
+                start: StrykerPosition {
+                    line: s.line,
+                    column: s.column,
+                },
+                end: StrykerPosition {
+                    line: e.line,
+                    column: e.column,
+                },
+            };
+        }
+    }
+    // Fallback to stored 1-indexed line/column when source is unreadable.
+    StrykerLocation {
+        start: StrykerPosition {
+            line: mutant.line,
+            column: mutant.column,
+        },
+        end: StrykerPosition {
+            line: mutant.line,
+            column: mutant.column + 1,
+        },
+    }
+}
+
+fn relative_key(project_root: &Path, file: &Path) -> String {
+    file.strip_prefix(project_root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .to_string()
+}
+
+fn stryker_report(data: ReportData<'_>) -> String {
+    use std::collections::{BTreeMap, HashMap};
+
+    // Cache source text per absolute file path for location conversion + `source` field.
+    let mut sources: HashMap<PathBuf, Option<String>> = HashMap::new();
+    let mut mutants_by_file: BTreeMap<String, Vec<StrykerMutant>> = BTreeMap::new();
+
+    // Group results by relative file key, preserving all mutated files in the report.
+    for result in data.results {
+        let m = result.mutant();
+        // Resolve absolute path: mutant.file may already be absolute or relative to project_root.
+        let abs = if m.file.is_absolute() {
+            m.file.clone()
+        } else {
+            data.project_root.join(&m.file)
+        };
+        let entry = sources
+            .entry(abs.clone())
+            .or_insert_with(|| std::fs::read_to_string(&abs).ok());
+        let source_opt = entry.as_deref();
+
+        let (status, reason) = stryker_status(result);
+        let duration = match result {
+            MutantResult::Killed { duration_ms, .. }
+            | MutantResult::Survived { duration_ms, .. }
+            | MutantResult::TimedOut { duration_ms, .. }
+            | MutantResult::Error { duration_ms, .. } => Some(*duration_ms),
+            MutantResult::Equivalent { .. } => None,
+        };
+        let description = if m.original.is_empty() && m.replacement.is_empty() {
+            None
+        } else {
+            Some(format!("{} -> {}", m.original, m.replacement))
+        };
+
+        let key = relative_key(data.project_root, &abs);
+        mutants_by_file.entry(key).or_default().push(StrykerMutant {
+            id: m.id.clone(),
+            mutator_name: m.operator.clone(),
+            replacement: Some(m.replacement.clone()),
+            location: stryker_location(source_opt, m),
+            status: status.to_string(),
+            description,
+            status_reason: reason,
+            duration,
+        });
+    }
+
+    // Ensure every source path appears even with zero mutants.
+    for path in data.source_paths {
+        let abs = if path.is_absolute() {
+            path.clone()
+        } else {
+            data.project_root.join(path)
+        };
+        let key = relative_key(data.project_root, &abs);
+        mutants_by_file.entry(key).or_default();
+        sources
+            .entry(abs.clone())
+            .or_insert_with(|| std::fs::read_to_string(&abs).ok());
+    }
+
+    let mut files: BTreeMap<String, StrykerFile> = BTreeMap::new();
+    for (key, mutants) in mutants_by_file {
+        let abs = data.project_root.join(&key);
+        let source = sources
+            .get(&abs)
+            .and_then(|s| s.clone())
+            .or_else(|| {
+                // Fall back to lookup by already-cached absolute path variants.
+                sources
+                    .iter()
+                    .find(|(p, _)| relative_key(data.project_root, p) == key)
+                    .and_then(|(_, s)| s.clone())
+            })
+            .unwrap_or_default();
+        files.insert(
+            key,
+            StrykerFile {
+                language: "lua".to_string(),
+                source,
+                mutants,
+            },
+        );
+    }
+
+    let report = StrykerReport {
+        schema_version: "2.0".to_string(),
+        thresholds: StrykerThresholds { high: 80, low: 60 },
+        files,
+        project_root: Some(data.project_root.to_string_lossy().to_string()),
+        framework: Some(StrykerFramework {
+            name: "lua-mutation-test".to_string(),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        }),
+    };
+
+    serde_json::to_string_pretty(&report).unwrap_or_default()
 }
 
 fn html_report(data: ReportData<'_>) -> String {
@@ -1059,5 +1273,90 @@ mod tests {
         let contents = std::fs::read_to_string(&tmp).unwrap();
         assert_eq!(contents, report);
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn stryker_format_parses_from_str() {
+        assert_eq!(
+            "stryker".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Stryker
+        );
+        assert_eq!(
+            "STRYKER".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Stryker
+        );
+    }
+
+    #[test]
+    fn stryker_report_conforms_to_schema_v2() {
+        let tmp = std::env::temp_dir().join(format!("lmt-stryker-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("src")).unwrap();
+        let file_path = tmp.join("src").join("foo.lua");
+        let source = "local x = 1 + 2\nreturn x\n";
+        std::fs::write(&file_path, source).unwrap();
+
+        let one_offset = source.find('1').unwrap();
+        let killed = Mutant::from_candidate(
+            CandidateMutant {
+                start_byte: one_offset,
+                end_byte: one_offset + 1,
+                replacement: "0".to_string(),
+            },
+            "literal",
+            &file_path,
+            source,
+        );
+        let results = vec![MutantResult::Killed {
+            mutant: killed,
+            duration_ms: 10,
+            stdout_snippet: String::new(),
+            stderr_snippet: String::new(),
+        }];
+        let data = ReportData {
+            results: &results,
+            project_root: &tmp,
+            source_paths: std::slice::from_ref(&file_path),
+        };
+
+        let report = generate_report(ReportFormat::Stryker, data, None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(v["schemaVersion"], "2.0");
+        assert_eq!(v["thresholds"]["high"], 80);
+        assert_eq!(v["thresholds"]["low"], 60);
+        let files = v["files"].as_object().unwrap();
+        assert_eq!(files.len(), 1);
+        let (_, file) = files.iter().next().unwrap();
+        assert_eq!(file["language"], "lua");
+        assert_eq!(file["source"], source);
+        let mutant = &file["mutants"][0];
+        assert_eq!(mutant["mutatorName"], "literal");
+        assert_eq!(mutant["status"], "Killed");
+        assert_eq!(mutant["replacement"], "0");
+        assert!(mutant["location"]["start"]["line"].as_u64().unwrap() >= 1);
+        assert!(mutant["location"]["start"]["column"].as_u64().unwrap() >= 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn stryker_status_mapping_covers_all_categories() {
+        assert_eq!(stryker_status(&dummy_result(Category::Killed)).0, "Killed");
+        assert_eq!(
+            stryker_status(&dummy_result(Category::Survived)).0,
+            "Survived"
+        );
+        assert_eq!(
+            stryker_status(&dummy_result(Category::TimedOut)).0,
+            "Timeout"
+        );
+        assert_eq!(
+            stryker_status(&dummy_result(Category::Error)).0,
+            "RuntimeError"
+        );
+        assert_eq!(
+            stryker_status(&dummy_result(Category::Equivalent)).0,
+            "Ignored"
+        );
     }
 }
