@@ -5,7 +5,7 @@
 [![Rust](https://github.com/rcasia/lua-mutation-test/actions/workflows/rust.yml/badge.svg)](https://github.com/rcasia/lua-mutation-test/blob/main/.github/workflows/rust.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/rcasia/lua-mutation-test)](https://github.com/rcasia/lua-mutation-test/releases)
 [![License](https://img.shields.io/github/license/rcasia/lua-mutation-test)](LICENSE)
-[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fdashboard.stryker-mutator.io%2Fapi%2Freports%2Fgithub.com%2Frcasia%2Flua-mutation-test%2Fmain%2Fbadge)](https://dashboard.stryker-mutator.io/reports/github.com/rcasia/lua-mutation-test/main)
+[![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fdashboard.stryker-mutator.io%2Fapi%2Freports%2Fgithub.com%2Flua-mutation-test%2Flua-mutation-test%2Fmain%2Fbadge)](https://dashboard.stryker-mutator.io/reports/github.com/lua-mutation-test/lua-mutation-test/main)
 [![Docs](https://img.shields.io/badge/docs-gh--pages-blue)](https://rcasia.github.io/lua-mutation-test/)
 
 A mutation testing tool for Lua, written in Rust.
@@ -164,7 +164,7 @@ Publish mutation results to the Stryker dashboard (`dashboard.stryker-mutator.io
 
 ```bash
 export STRYKER_DASHBOARD_API_KEY=xxx
-curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/rcasia/lua-mutation-test/main" \
+curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/lua-mutation-test/lua-mutation-test/main" \
   -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
   -H "Content-Type: application/json" \
   -d @mutation-testing-report.json

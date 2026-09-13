@@ -38,7 +38,7 @@ jobs:
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
         run: |
-          curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/rcasia/lua-mutation-test/${GITHUB_REF_NAME}" \
+          curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/lua-mutation-test/lua-mutation-test/${GITHUB_REF_NAME}" \
             -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
             -H "Content-Type: application/json" \
             -d @mutation-testing-report.json
