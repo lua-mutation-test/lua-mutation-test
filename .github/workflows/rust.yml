@@ -19,8 +19,6 @@ jobs:
     - uses: actions/checkout@v7
     - name: Install Lua
       run: sudo apt-get update && sudo apt-get install -y lua5.4
-    - name: Fetch tree-sitter-lua grammar
-      run: ./scripts/fetch-tree-sitter-lua.sh
     - name: Build
       run: cargo build --verbose
     - name: Run tests

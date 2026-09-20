@@ -63,8 +63,17 @@ releases.
 
 - `.releaserc.json` configures the plugins and ZeroVer release rules.
 - `.github/workflows/release.yml` runs tests and then semantic-release on a schedule.
-- Crates.io publishing is performed in a separate `publish-crate` job that depends on the
-  `release` job, so a GitHub release is created independently of the crate upload.
+- Version bumps are applied to `Cargo.toml` and `Cargo.lock` by
+  `scripts/bump-cargo-version.sh` (via the `@semantic-release/exec` prepare
+  step) and committed back with `@semantic-release/git`, so GitHub tags and
+  the crate version never drift apart.
+- crates.io publishing happens in the same release job via the
+  `@semantic-release/exec` publish step (`cargo publish`), which requires a
+  `CARGO_REGISTRY_TOKEN` repository secret. The step fails loudly when the
+  secret is missing instead of silently skipping the upload.
+- The release binary is built **after** semantic-release determines the new
+  version, so it embeds the correct version, then attached to the GitHub
+  release with `gh release upload`.
 - The initial tag `v0.0.0` ensures semantic-release starts from 0.x.
 
 ## References

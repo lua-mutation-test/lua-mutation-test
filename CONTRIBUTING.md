@@ -12,31 +12,23 @@ all feedback, bug reports, and pull requests are welcome.
 1. **Clone the repository**:
 
    ```bash
-   git clone git@github.com:rcasia/lua-mutation-test.git
+   git clone git@github.com:lua-mutation-test/lua-mutation-test.git
    cd lua-mutation-test
    ```
 
-2. **Fetch the vendored tree-sitter Lua grammar**:
-
-   ```bash
-   ./scripts/fetch-tree-sitter-lua.sh
-   ```
-
-   The grammar is cloned into `tree-sitter-lua/` (gitignored).
-
-3. **Build the project**:
+2. **Build the project**:
 
    ```bash
    cargo build
    ```
 
-4. **Run the tests**:
+3. **Run the tests**:
 
    ```bash
    cargo test
    ```
 
-5. **Run the benchmarks** (optional):
+4. **Run the benchmarks** (optional):
 
    ```bash
    cargo bench
@@ -45,9 +37,8 @@ all feedback, bug reports, and pull requests are welcome.
 Copy-paste quick setup:
 
 ```bash
-git clone git@github.com:rcasia/lua-mutation-test.git
+git clone git@github.com:lua-mutation-test/lua-mutation-test.git
 cd lua-mutation-test
-./scripts/fetch-tree-sitter-lua.sh
 cargo build
 cargo test
 ```

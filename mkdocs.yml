@@ -1,8 +1,8 @@
 site_name: lua-mutation-test
 site_description: A mutation testing tool for Lua, written in Rust.
-site_url: https://rcasia.github.io/lua-mutation-test/
-repo_url: https://github.com/rcasia/lua-mutation-test
-repo_name: rcasia/lua-mutation-test
+site_url: https://lua-mutation-test.github.io/lua-mutation-test/
+repo_url: https://github.com/lua-mutation-test/lua-mutation-test
+repo_name: lua-mutation-test/lua-mutation-test
 edit_uri: edit/main/docs/
 
 theme:
@@ -63,8 +63,9 @@ nav:
       - "ADR-008: Agent-driven development": adrs/0008-agent-driven-development.md
       - "ADR-009: License under Elastic License 2.0": adrs/0009-elastic-license-2.0.md
       - "ADR-010: License under Apache License 2.0": adrs/0010-apache-license-2.0.md
+      - "ADR-011: tree-sitter-lua from crates.io": adrs/0011-crates-io-tree-sitter-lua.md
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/rcasia/lua-mutation-test
+      link: https://github.com/lua-mutation-test/lua-mutation-test

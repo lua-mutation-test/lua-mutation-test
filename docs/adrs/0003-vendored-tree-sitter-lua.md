@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-011](0011-crates-io-tree-sitter-lua.md)
 
 ## Context
 

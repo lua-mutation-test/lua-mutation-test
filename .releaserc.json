@@ -29,15 +29,24 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "verifyConditionsCmd": "test -n \"$CARGO_REGISTRY_TOKEN\" || (echo 'CARGO_REGISTRY_TOKEN is not set; add it as a repository secret to enable crates.io publishing' >&2; exit 1)",
+        "prepareCmd": "./scripts/bump-cargo-version.sh ${nextRelease.version}",
+        "publishCmd": "cargo publish"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["Cargo.toml", "Cargo.lock"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
       "@semantic-release/github",
       {
-        "successCommentCondition": false,
-        "assets": [
-          {
-            "path": "dist/lua-mutation-test-x86_64-unknown-linux-gnu.tar.gz",
-            "label": "lua-mutation-test-x86_64-unknown-linux-gnu.tar.gz"
-          }
-        ]
+        "successCommentCondition": false
       }
     ]
   ]

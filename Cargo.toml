@@ -1,9 +1,9 @@
 [package]
 name = "lua-mutation-test"
-version = "0.0.2"
+version = "0.0.4"
 edition = "2021"
 description = "A mutation testing tool for Lua, written in Rust."
-repository = "https://github.com/rcasia/lua-mutation-test"
+repository = "https://github.com/lua-mutation-test/lua-mutation-test"
 license = "Apache-2.0"
 readme = "README.md"
 keywords = ["lua", "mutation-testing", "testing"]
@@ -16,7 +16,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 tree-sitter = "0.25.3"
-tree-sitter-lua = { path = "./tree-sitter-lua", version = "0.5.0" }
+tree-sitter-lua = "0.5.0"
 glob = "0.3"
 notify = "8"
 sha2 = "0.10"

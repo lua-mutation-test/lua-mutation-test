@@ -2,11 +2,11 @@
 
 > Find the bugs your tests miss — mutation testing for Lua and Neovim plugins.
 
-[![Rust](https://github.com/rcasia/lua-mutation-test/actions/workflows/rust.yml/badge.svg)](https://github.com/rcasia/lua-mutation-test/blob/main/.github/workflows/rust.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/rcasia/lua-mutation-test)](https://github.com/rcasia/lua-mutation-test/releases)
-[![License](https://img.shields.io/github/license/rcasia/lua-mutation-test)](LICENSE)
+[![Rust](https://github.com/lua-mutation-test/lua-mutation-test/actions/workflows/rust.yml/badge.svg)](https://github.com/lua-mutation-test/lua-mutation-test/blob/main/.github/workflows/rust.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/lua-mutation-test/lua-mutation-test)](https://github.com/lua-mutation-test/lua-mutation-test/releases)
+[![License](https://img.shields.io/github/license/lua-mutation-test/lua-mutation-test)](LICENSE)
 [![Mutation testing badge](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2Flua-mutation-test%2Flua-mutation-test%2Fmain)](https://dashboard.stryker-mutator.io/reports/github.com/lua-mutation-test/lua-mutation-test/main)
-[![Docs](https://img.shields.io/badge/docs-gh--pages-blue)](https://rcasia.github.io/lua-mutation-test/)
+[![Docs](https://img.shields.io/badge/docs-gh--pages-blue)](https://lua-mutation-test.github.io/lua-mutation-test/)
 
 A mutation testing tool for Lua, written in Rust.
 
@@ -50,9 +50,11 @@ Works with [lux](https://github.com/nvim-neorocks/lux) and
 
 ### Current
 
-- Parse Lua source code using a vendored [tree-sitter-lua](https://github.com/tree-sitter-grammars/tree-sitter-lua) grammar.
+- Parse Lua source code using the [tree-sitter-lua](https://github.com/tree-sitter-grammars/tree-sitter-lua) grammar (pulled from crates.io).
 - Generate mutants from Lua source code (arithmetic, relational, logical, literal, unary, and control-flow operators).
 - Run a given Lua test suite against each mutant with process isolation and timeouts.
+- Run mutants in parallel (`--workers`) with an incremental result cache (`.lua-mutation-test/cache/`) that reuses results for unchanged files and reports `cached`/`ran` counts.
+- Watch mode (`lmut watch`) that re-runs affected mutants when source files change.
 - Compute and report mutation scores (summary, per-mutant, JSON, CTRF, and HTML).
 - Static heuristics that detect likely-equivalent mutants (e.g., `x + 0`) before execution.
 - Configurable mutation operators and ignore patterns.
@@ -67,7 +69,7 @@ Works with [lux](https://github.com/nvim-neorocks/lux) and
 ### From GitHub Releases
 
 Download the pre-built binary for your platform from the
-[releases page](https://github.com/rcasia/lua-mutation-test/releases) and place it
+[releases page](https://github.com/lua-mutation-test/lua-mutation-test/releases) and place it
 on your `PATH`.
 
 The release archive contains both the `lua-mutation-test` binary and the shorter
@@ -85,6 +87,44 @@ This installs the `lua-mutation-test` binary. The `lmut` alias is included.
 
 If you prefer to build from source, see [CONTRIBUTING.md](CONTRIBUTING.md) for the
 development setup.
+
+## GitHub Action
+
+Run mutation testing in CI with the
+[lua-mutation-test-action](https://github.com/lua-mutation-test/lua-mutation-test-action).
+It downloads a pinned `lmut` binary from GitHub Releases — no Rust toolchain
+needed — runs `lmut run`, and can fail the build when the mutation score drops
+below a threshold:
+
+```yaml
+- name: Run mutation testing
+  uses: lua-mutation-test/lua-mutation-test-action@v0
+  with:
+    path: lua
+    test-command: busted
+    fail-under: 80
+```
+
+See the
+[action repository](https://github.com/lua-mutation-test/lua-mutation-test-action)
+for all inputs (`version`, `config`, `timeout`, `args`, PR comments, job
+summaries, annotations) and outputs (`mutation-score`, `killed`, `survived`).
+
+**PR vs. nightly:** mutate only the diff on pull requests, run the full suite
+nightly:
+
+```yaml
+# PR workflow (fast, diff-scoped)
+- run: git fetch origin main
+- uses: lua-mutation-test/lua-mutation-test-action@v0
+  with:
+    args: --changed-since origin/main
+    fail-under: 80
+# Nightly workflow: same step without `args` for a full run.
+```
+
+Locally: `lmut run --changed-since origin/main` on a branch, plain `lmut run`
+for the whole project. Scoped scores cover the diff only.
 
 ## Usage
 
@@ -105,6 +145,13 @@ Run with a custom test command and timeout:
 lmut run src --test-command 'busted' --timeout 30
 ```
 
+Run mutants in parallel and watch for changes:
+
+```bash
+lmut run src --workers 4
+lmut watch src --test-command 'busted'
+```
+
 List available mutation operators:
 
 ```bash
@@ -117,7 +164,7 @@ Create a sample configuration file:
 lmut init
 ```
 
-See the [CLI Reference](https://rcasia.github.io/lua-mutation-test/cli-reference/) for the
+See the [CLI Reference](https://lua-mutation-test.github.io/lua-mutation-test/cli-reference/) for the
 full list of commands and options.
 
 > Note: The project is a work in progress. APIs, CLI flags, and behavior may change.
@@ -132,6 +179,7 @@ test_command = "busted"
 timeout = 30
 test_globs = ["*_spec.lua", "*_test.lua", "test_*.lua"]
 source_globs = ["*.lua"]
+difficulty = "very_hard"
 
 [files]
 exclude = ["*_test.lua", "*_spec.lua"]
@@ -176,10 +224,15 @@ codebase itself: CI runs [cargo-mutants](https://mutants.rs/) on every push to
 `scripts/cargo-mutants-to-stryker.py`, and publishes the same Stryker-schema
 report (see `.github/workflows/mutation.yml`).
 
+> Note: that workflow self-tests this repo's Rust code with cargo-mutants — it
+> is unrelated to the
+> [lua-mutation-test-action](https://github.com/lua-mutation-test/lua-mutation-test-action),
+> which mutation-tests downstream Lua projects with `lmut`.
+
 ## Architecture
 
 - **Rust CLI**: Entry point and orchestration.
-- **tree-sitter Lua parser**: Vendored grammar used to parse Lua source into an AST.
+- **tree-sitter Lua parser**: Grammar crate from crates.io used to parse Lua source into an AST.
 - **Mutant generator**: Applies configurable mutation operators and detects likely-equivalent mutants with static heuristics.
 - **Test runner**: Runs the test suite against each mutant in an isolated temporary copy of the project.
 - **Reporter**: Computes mutation scores and emits summary, per-mutant, JSON, CTRF, HTML, or Stryker (`mutation-testing-report.json`, schema v2) reports.

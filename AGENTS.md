@@ -24,13 +24,7 @@ mutant, and reports mutation scores.
 
 ## Build and test
 
-Before building, fetch the vendored grammar:
-
-```bash
-./scripts/fetch-tree-sitter-lua.sh
-```
-
-Then build and test:
+Build and test:
 
 ```bash
 cargo build
@@ -53,7 +47,7 @@ This project follows **trunk-based development**:
 - Pull/rebase `origin/main` before pushing.
 - Ensure CI is green before and after your push.
 - Do not push workflow files through HTTPS OAuth without `workflow` scope; use SSH
-  (`git@github.com:rcasia/lua-mutation-test.git`).
+  (`git@github.com:lua-mutation-test/lua-mutation-test.git`).
 
 ## Documentation
 
@@ -124,9 +118,11 @@ Skip an ADR for routine changes such as:
 
 ## Common gotchas
 
-- `tree-sitter-lua/` is gitignored. Do not commit it. Use
-  `scripts/fetch-tree-sitter-lua.sh` to obtain it.
-- The vendored `tree-sitter-lua` crate compiles its own parser; this project no longer
-  uses a custom `build.rs`.
+- `tree-sitter-lua` comes from crates.io (see ADR-011); there is no vendored
+  grammar directory and no fetch script.
+- Releases are automated: semantic-release bumps `Cargo.toml`/`Cargo.lock` via
+  `scripts/bump-cargo-version.sh` and publishes to crates.io in
+  `.github/workflows/release.yml`. Never bump versions by hand; a
+  `CARGO_REGISTRY_TOKEN` repository secret is required.
 - The default branch is `main`.
 - The binary name is `lua-mutation-test` (configured in `Cargo.toml` via `[[bin]]`).

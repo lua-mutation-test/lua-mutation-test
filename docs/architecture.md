@@ -23,23 +23,25 @@ scores.
                                                    +------------------+
                                 |
                                 v
-                       +------------------+
-                       | Reporter         |
-                       | (CLI/JSON/HTML)  |
-                       +------------------+
+                        +------------------+
+                        | Reporter         |
+                        | (summary/JSON/   |
+                        |  CTRF/HTML/      |
+                        |  Stryker)        |
+                        +------------------+
 ```
 
 ### CLI / Config
 
 - Parses command-line arguments and configuration files.
 - Selects files, operators, and test runner.
-- Entry point for `run`, `list-mutants`, `list-operators`, and `init` subcommands.
+- Entry point for `run`, `watch`, `list-mutants`, `list-operators`, and `init` subcommands.
 - See the [CLI Reference](cli-reference.md) for the complete command documentation.
 
 ### Lua Parser
 
-- Uses a vendored [tree-sitter-lua](https://github.com/tree-sitter-grammars/tree-sitter-lua)
-  grammar to parse Lua source into an AST.
+- Uses the [tree-sitter-lua](https://github.com/tree-sitter-grammars/tree-sitter-lua)
+  grammar crate from crates.io to parse Lua source into an AST.
 - Provides AST traversal utilities and source-location mapping.
 
 ### Mutant Generator
@@ -53,6 +55,20 @@ scores.
 - Writes each mutant to a temporary file.
 - Runs the project's test suite in an isolated process.
 - Enforces timeouts and captures exit codes and output.
+- Executes mutants in parallel with a worker pool (`--workers`, else the
+  `parallelism` config value, else available CPUs).
+- Reuses results from the incremental cache (`.lua-mutation-test/cache/`) for
+  mutants whose sources and configuration are unchanged; the summary line
+  reports both `cached` and `ran` counts.
+- `watch` mode re-runs affected mutants when source files change.
+- `--changed-since <git-ref>` (changed-files mode) filters the discovered
+  source list to files differing from the base ref before mutant generation,
+  and unions changed test files into the baseline run. The filtered list then
+  flows through `run_incremental` unchanged: in-scope mutants execute and
+  populate the cache normally, so a later full `run` reuses scoped results
+  (and vice versa) via the normal hash/git-HEAD invalidation. Reports and the
+  summary cover the scoped run only — scoped scores are diff-scoped, while the
+  `cached`/`ran` counts keep their existing meanings.
 
 ### Reporter
 
@@ -66,7 +82,8 @@ scores.
 2. The parser produces an AST for each source file.
 3. The mutant generator walks the AST and creates mutants.
 4. Static heuristics classify obviously equivalent mutants before they are executed.
-5. The runner executes tests against each remaining mutant.
+5. The runner executes tests against each remaining mutant, reusing cached
+   results for unchanged files and configuration.
 6. The reporter categorizes mutants (killed, survived, timed out, error, equivalent) and computes scores.
 
 ## Equivalent-mutant heuristics
