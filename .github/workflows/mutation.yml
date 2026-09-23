@@ -32,7 +32,7 @@ jobs:
           python3 scripts/cargo-mutants-to-stryker.py mutants.out "$GITHUB_WORKSPACE" mutation-testing-report.json
       - name: Upload Stryker report artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-testing-report
           path: |
