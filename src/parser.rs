@@ -176,4 +176,61 @@ mod tests {
             Some(std::path::PathBuf::from("does-not-exist.lua"))
         );
     }
+
+    #[test]
+    fn parse_error_reports_multiline_location() {
+        let mut parser = Parser::new().unwrap();
+        let source = "local x = 1\nif a == then return true end\n";
+        let err = parser.parse_source(source).expect_err("should fail");
+        assert_eq!(err.offset, 12);
+        assert_eq!(err.location(), (2, 1));
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("2:1"),
+            "Display should contain line:column, got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("byte offset 12"),
+            "Display should contain byte offset, got: {}",
+            msg
+        );
+
+        let err_with_path = ParseError {
+            path: Some(std::path::PathBuf::from("foo.lua")),
+            source: source.to_string(),
+            offset: 12,
+        };
+        assert_eq!(err_with_path.location(), (2, 1));
+        let msg_with_path = format!("{}", err_with_path);
+        assert!(
+            msg_with_path.contains("foo.lua"),
+            "Display with path should contain path, got: {}",
+            msg_with_path
+        );
+        assert!(
+            msg_with_path.contains("2:1"),
+            "Display with path should contain line:column, got: {}",
+            msg_with_path
+        );
+    }
+
+    #[test]
+    fn line_start_table_edges() {
+        assert_eq!(build_line_start_table(""), vec![0]);
+        assert_eq!(build_line_start_table("abc"), vec![0]);
+        assert_eq!(build_line_start_table("a\nb\n"), vec![0, 2, 4]);
+        assert_eq!(build_line_start_table("ab\ncd\n"), vec![0, 3, 6]);
+        assert_eq!(build_line_start_table("ab\ncd\nef"), vec![0, 3, 6]);
+
+        let src = "ab\ncd\nef";
+        assert_eq!(byte_offset_to_line_column(src, 0), (1, 1));
+        assert_eq!(byte_offset_to_line_column(src, 2), (1, 3));
+        assert_eq!(byte_offset_to_line_column(src, 3), (2, 1));
+        assert_eq!(byte_offset_to_line_column(src, 5), (2, 3));
+        assert_eq!(byte_offset_to_line_column(src, 6), (3, 1));
+        assert_eq!(byte_offset_to_line_column(src, 7), (3, 2));
+        assert_eq!(byte_offset_to_line_column(src, 8), (3, 3));
+        assert_eq!(byte_offset_to_line_column("", 0), (1, 1));
+    }
 }
