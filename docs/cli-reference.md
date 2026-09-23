@@ -85,11 +85,17 @@ lmut init
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| `0` | Success. |
-| `1` | Test failures detected (mutants survived or baseline failed). |
-| `2` | CLI or configuration error. |
+These exit codes are a stability contract: wrappers such as the
+`lua-mutation-test-action` GitHub Action distinguish clean kills,
+surviving mutants, red baselines, and misconfiguration without grepping
+log text.
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0` | Success | All mutants killed (mutation testing completed, nothing survived). |
+| `1` | Survivors | Mutation testing completed, but one or more mutants survived. Use this for quality-gate decisions. |
+| `2` | CLI/config error | Startup or configuration failure: no test command, no test files discovered, bad config, parse errors, invalid flags, etc. |
+| `3` | Baseline failure | The unmodified test suite failed, so no mutant result would be meaningful. Fix the baseline before trusting any score. |
 
 ## Configuration file
 

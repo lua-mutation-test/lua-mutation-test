@@ -109,10 +109,76 @@ pub struct WatchArgs {
 }
 
 /// Exit codes used by the binary.
+///
+/// These codes are part of the stable CLI contract documented in
+/// `docs/cli-reference.md`:
+/// - `0` (`SUCCESS`): all mutants killed.
+/// - `1` (`TEST_FAILURES`): mutation testing completed, one or more mutants survived.
+/// - `2` (`CLI_ERROR`): startup or configuration error (no test command,
+///   no test files, bad config, parse errors, ...).
+/// - `3` (`BASELINE_FAILED`): the unmodified test suite is red, so no
+///   mutant result would be meaningful.
 pub mod exit {
     pub const SUCCESS: i32 = 0;
     pub const TEST_FAILURES: i32 = 1;
     pub const CLI_ERROR: i32 = 2;
+    pub const BASELINE_FAILED: i32 = 3;
+}
+
+/// Error from the `run`/`watch` pipeline carrying the process exit code.
+///
+/// Callers use [`ExitError::cli`] for startup/config failures (exit 2) and
+/// [`ExitError::baseline`] for a red baseline (exit 3). `main` maps the
+/// stored code directly to the process exit status so wrappers (e.g. a
+/// GitHub Action) can distinguish the three failure modes without grepping
+/// log text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExitError {
+    message: String,
+    code: i32,
+}
+
+impl ExitError {
+    /// Configuration or CLI usage error (exit [`exit::CLI_ERROR`]).
+    pub fn cli(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: exit::CLI_ERROR,
+        }
+    }
+
+    /// Red baseline: the unmodified suite failed (exit [`exit::BASELINE_FAILED`]).
+    pub fn baseline(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: exit::BASELINE_FAILED,
+        }
+    }
+
+    /// Process exit code for this error.
+    pub fn code(&self) -> i32 {
+        self.code
+    }
+}
+
+impl std::fmt::Display for ExitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for ExitError {}
+
+impl From<String> for ExitError {
+    fn from(message: String) -> Self {
+        Self::cli(message)
+    }
+}
+
+impl From<&str> for ExitError {
+    fn from(message: &str) -> Self {
+        Self::cli(message)
+    }
 }
 
 #[cfg(test)]
@@ -214,5 +280,29 @@ mod tests {
             }
             _ => panic!("expected watch subcommand"),
         }
+    }
+
+    #[test]
+    fn exit_codes_are_distinct_and_stable() {
+        assert_eq!(exit::SUCCESS, 0);
+        assert_eq!(exit::TEST_FAILURES, 1);
+        assert_eq!(exit::CLI_ERROR, 2);
+        assert_eq!(exit::BASELINE_FAILED, 3);
+    }
+
+    #[test]
+    fn exit_error_carries_baseline_code() {
+        let err = ExitError::baseline("baseline test run failed; aborting");
+        assert_eq!(err.code(), exit::BASELINE_FAILED);
+        assert_eq!(err.to_string(), "baseline test run failed; aborting");
+    }
+
+    #[test]
+    fn string_errors_default_to_cli_error() {
+        let from_string: ExitError = "no test files discovered".to_string().into();
+        assert_eq!(from_string.code(), exit::CLI_ERROR);
+
+        let from_str: ExitError = "no test command configured".into();
+        assert_eq!(from_str.code(), exit::CLI_ERROR);
     }
 }

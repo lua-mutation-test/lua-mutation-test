@@ -10,12 +10,15 @@ use std::time::{Duration, Instant};
 ///
 /// The `should_stop` callback is checked between debounced events. Returning
 /// `true` causes the watcher to exit cleanly.
-pub fn watch_project(
+pub fn watch_project<E>(
     project_root: &Path,
     debounce: Duration,
-    mut on_change: impl FnMut() -> Result<(), String>,
+    mut on_change: impl FnMut() -> Result<(), E>,
     mut should_stop: impl FnMut() -> bool,
-) -> Result<(), String> {
+) -> Result<(), E>
+where
+    E: From<String>,
+{
     let (tx, rx) = channel::<notify::Result<Event>>();
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<Event>| {
@@ -23,11 +26,11 @@ pub fn watch_project(
         },
         NotifyConfig::default(),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| E::from(e.to_string()))?;
 
     watcher
         .watch(project_root, RecursiveMode::Recursive)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| E::from(e.to_string()))?;
 
     while !should_stop() {
         if let Some(()) = debounced_event(&rx, debounce, &mut should_stop)? {
@@ -43,11 +46,14 @@ pub fn watch_project(
 /// Returns `Some(())` when an event was received and the debounce period elapsed
 /// without further events. Returns `None` if `should_stop` became true while
 /// waiting.
-fn debounced_event(
+fn debounced_event<E>(
     rx: &Receiver<notify::Result<Event>>,
     debounce: Duration,
     should_stop: &mut impl FnMut() -> bool,
-) -> Result<Option<()>, String> {
+) -> Result<Option<()>, E>
+where
+    E: From<String>,
+{
     // Wait for the first event.
     loop {
         if should_stop() {
@@ -55,10 +61,10 @@ fn debounced_event(
         }
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(_)) => break,
-            Ok(Err(e)) => return Err(e.to_string()),
+            Ok(Err(e)) => return Err(E::from(e.to_string())),
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => {
-                return Err("file watcher channel closed".to_string())
+                return Err(E::from("file watcher channel closed".to_string()))
             }
         }
     }
@@ -73,10 +79,10 @@ fn debounced_event(
             Ok(Ok(_)) => {
                 deadline = Instant::now() + debounce;
             }
-            Ok(Err(e)) => return Err(e.to_string()),
+            Ok(Err(e)) => return Err(E::from(e.to_string())),
             Err(RecvTimeoutError::Timeout) => break,
             Err(RecvTimeoutError::Disconnected) => {
-                return Err("file watcher channel closed".to_string())
+                return Err(E::from("file watcher channel closed".to_string()))
             }
         }
     }
@@ -122,7 +128,7 @@ mod tests {
         }
 
         let mut should_stop = || false;
-        let result = debounced_event(&rx, Duration::from_millis(50), &mut should_stop)
+        let result = debounced_event::<String>(&rx, Duration::from_millis(50), &mut should_stop)
             .unwrap()
             .is_some();
         assert!(result);
@@ -145,13 +151,13 @@ mod tests {
             fs::write(dir_clone.join("trigger.lua"), "x").unwrap();
         });
 
-        let result = watch_project(
+        let result = watch_project::<String>(
             &dir,
             Duration::from_millis(50),
             move || {
                 counter_clone.fetch_add(1, Ordering::SeqCst);
                 stop_clone.store(true, Ordering::SeqCst);
-                Ok(())
+                Ok::<(), String>(())
             },
             || stop.load(Ordering::SeqCst),
         );
