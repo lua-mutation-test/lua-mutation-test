@@ -273,4 +273,112 @@ mod tests {
             .collect();
         assert_eq!(files, vec!["a.lua".to_string(), "b.lua".to_string()]);
     }
+
+    #[test]
+    fn parse_rejects_out_of_range() {
+        let err = Shard::parse("0/3").unwrap_err();
+        assert!(
+            err.contains("between 1 and n"),
+            "k=0 should name the 1..=n bound, got: {err}"
+        );
+        let err = Shard::parse("4/3").unwrap_err();
+        assert!(
+            err.contains("between 1 and n"),
+            "k>n should name the 1..=n bound, got: {err}"
+        );
+        // Boundary k == n must be accepted (kills `>` vs `>=`).
+        assert_eq!(Shard::parse("3/3").unwrap(), Shard { index: 3, total: 3 });
+        assert_eq!(Shard::parse("1/1").unwrap(), Shard { index: 1, total: 1 });
+    }
+
+    #[test]
+    fn sort_is_stable_by_identity() {
+        let mut mutants = vec![
+            mutant("b.lua", 2, "op_b", "r"),
+            mutant("a.lua", 1, "op_a", "r"),
+            mutant("a.lua", 0, "op_b", "r"),
+            mutant("b.lua", 0, "op_a", "r"),
+            mutant("a.lua", 0, "op_a", "r"),
+        ];
+        sort_mutants(&mut mutants);
+        let order: Vec<(String, usize, String)> = mutants
+            .iter()
+            .map(|m| {
+                (
+                    m.file.to_string_lossy().to_string(),
+                    m.line,
+                    m.operator.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                ("a.lua".to_string(), 0, "op_a".to_string()),
+                ("a.lua".to_string(), 0, "op_b".to_string()),
+                ("a.lua".to_string(), 1, "op_a".to_string()),
+                ("b.lua".to_string(), 0, "op_a".to_string()),
+                ("b.lua".to_string(), 2, "op_b".to_string()),
+            ]
+        );
+
+        let mut results: Vec<MutantResult> = vec![
+            killed_result("b.lua", 2, "op_b"),
+            killed_result("a.lua", 1, "op_a"),
+            killed_result("a.lua", 0, "op_b"),
+            killed_result("b.lua", 0, "op_a"),
+            killed_result("a.lua", 0, "op_a"),
+        ];
+        sort_results(&mut results);
+        let result_order: Vec<(String, usize, String)> = results
+            .iter()
+            .map(|r| {
+                let m = r.mutant();
+                (
+                    m.file.to_string_lossy().to_string(),
+                    m.line,
+                    m.operator.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(result_order, order);
+    }
+
+    fn killed_result(file: &str, line: usize, operator: &str) -> MutantResult {
+        MutantResult::Killed {
+            mutant: mutant(file, line, operator, "r"),
+            duration_ms: 0,
+            stdout_snippet: String::new(),
+            stderr_snippet: String::new(),
+        }
+    }
+
+    #[test]
+    fn select_shard_results_strides() {
+        // Fixed 5-result set, fed in reverse to prove internal sorting.
+        let results: Vec<MutantResult> = (0..5)
+            .rev()
+            .map(|i| killed_result("a.lua", i, "op"))
+            .collect();
+        let shard_1 = Shard { index: 1, total: 2 };
+        let shard_2 = Shard { index: 2, total: 2 };
+        let (sel_1, total_1) = select_shard_results(results.clone(), &shard_1);
+        let (sel_2, total_2) = select_shard_results(results, &shard_2);
+        assert_eq!(total_1, 5);
+        assert_eq!(total_2, 5);
+        // 5 over 2 shards -> ceil/floor split 3/2.
+        assert_eq!(sel_1.len(), 3);
+        assert_eq!(sel_2.len(), 2);
+        // Sorted order is line 0..4; stride 1/2 takes positions 0,2,4.
+        let lines_1: Vec<usize> = sel_1.iter().map(|r| r.mutant().line).collect();
+        let lines_2: Vec<usize> = sel_2.iter().map(|r| r.mutant().line).collect();
+        assert_eq!(lines_1, vec![0, 2, 4]);
+        assert_eq!(lines_2, vec![1, 3]);
+        // Union covers the full set exactly once.
+        let mut seen = std::collections::HashSet::new();
+        for r in sel_1.iter().chain(sel_2.iter()) {
+            assert!(seen.insert(r.mutant().id.clone()), "duplicate mutant");
+        }
+        assert_eq!(seen.len(), 5);
+    }
 }
