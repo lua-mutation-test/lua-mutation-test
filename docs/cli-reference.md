@@ -44,9 +44,29 @@ lmut run [PATH] [OPTIONS]
 | `--workers <N>` | Number of parallel workers for mutant execution. Overrides the `parallelism` config value. Defaults to the number of available CPUs. |
 | `--changed-since <git-ref>` | Only mutate source files changed since the given git ref (e.g. `origin/main`). See [Changed-files mode](#changed-files-mode) below. |
 | `--report-format <FORMAT>` | Report format: `summary`, `per-mutant`, `json`, `ctrf`, `html`, `stryker`. |
-| `--report-output <PATH>` | Write the generated report to this path. |
+| `--report-output <PATH>` | Write the generated report to this path. Use `-` to write to stdout (Unix convention). |
 | `--workers <N>` | Number of parallel workers for mutant execution. |
 | `--shard <K/N>` | Run only shard `K` of `N` (e.g. `--shard 2/5`). Partitions the mutant inventory deterministically by mutant count. |
+
+#### Report to stdout
+
+`--report-output -` writes the selected `--report-format` to stdout instead of
+a file, with identical bytes plus a trailing newline. Only `-` means stdout;
+a literal `stdout` value writes a regular file named `stdout`. No file named
+`-` is created (use `./-` for a literal file named `-`).
+
+Stream split in `-` mode keeps stdout pipe-parseable:
+
+* stdout: report content only.
+* stderr: progress/diagnostics and the `Mutation score:` summary line.
+
+In normal file mode the summary stays on stdout. `--report-output -`
+without `--report-format` does nothing.
+
+```bash
+lmut run src --test-command 'busted' --report-format json --report-output - | jq .overall
+lmut run src --report-format ctrf --report-output - 2>/dev/null | jq .results.summary
+```
 
 #### Sharding for CI matrix fan-out
 
@@ -91,6 +111,7 @@ lmut run --changed-since origin/main
 lmut run src --report-format ctrf --report-output ctrf-report.json
 lmut run src --report-format stryker --report-output mutation-testing-report.json
 lmut run src --shard 1/3 --report-format json --report-output shard-1.json
+lmut run src --test-command 'busted' --report-format json --report-output - | jq .
 ```
 
 #### Changed-files mode

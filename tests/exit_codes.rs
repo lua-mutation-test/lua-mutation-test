@@ -116,3 +116,66 @@ fn missing_test_command_exits_2() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn report_output_dash_writes_json_to_stdout() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("math.lua"),
+        "local M = {}\nfunction M.add(a, b)\n  return a + b\nend\nreturn M\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("math_spec.lua"),
+        "describe('math', function() end)\n",
+    )
+    .unwrap();
+    let runner = temp.path().join("run-tests.sh");
+    std::fs::write(&runner, "#!/bin/sh\nexit 0\n").unwrap();
+    make_executable(&runner);
+
+    let output = Command::new(binary())
+        .args([
+            "run",
+            temp.path().to_str().unwrap(),
+            "--test-command",
+            runner.to_str().unwrap(),
+            "--report-format",
+            "json",
+            "--report-output",
+            "-",
+        ])
+        .current_dir(temp.path())
+        .output()
+        .expect("failed to run binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stub runner passes, so mutants survive (exit 1)\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("Mutation score:"),
+        "stdout must carry only report content, stdout:\n{stdout}"
+    );
+    assert!(
+        stderr.contains("Mutation score:"),
+        "summary moves to stderr in `-` mode, stderr:\n{stderr}"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout should be parseable JSON");
+    assert!(
+        parsed.get("results").is_some(),
+        "json report should contain results, stdout:\n{stdout}"
+    );
+    assert!(
+        parsed.get("overall").is_some(),
+        "json report should contain overall score, stdout:\n{stdout}"
+    );
+    assert!(
+        !temp.path().join("-").exists(),
+        "`-` output must not create a file named `-`"
+    );
+}

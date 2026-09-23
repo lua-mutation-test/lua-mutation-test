@@ -1,8 +1,5 @@
-# report-generation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change generate-reports. Update Purpose after archive.
-## Requirements
 ### Requirement: CLI summary report
 The system SHALL emit a CLI summary containing the overall mutation score and counts for each result category.
 
@@ -13,27 +10,6 @@ The system SHALL emit a CLI summary containing the overall mutation score and co
 #### Scenario: Summary goes to stderr when report goes to stdout
 - **WHEN** the user passes `--report-output -` alongside `--report-format`
 - **THEN** the CLI summary SHALL be written to stderr instead of stdout so stdout carries only report content
-
-### Requirement: Per-mutant CLI output
-The system SHALL emit per-mutant CLI output that includes the mutant identifier, the diff against the original source, and the test result.
-
-#### Scenario: Inspect a killed mutant
-- **WHEN** a mutant is killed by the test suite
-- **THEN** the CLI output SHALL show the mutant identifier, the unified diff of the mutation, and the result label `killed`
-
-### Requirement: JSON report
-The system SHALL write a JSON report containing full mutation results, project metadata, and a generation timestamp.
-
-#### Scenario: Generate JSON report after a run
-- **WHEN** the user requests a JSON report
-- **THEN** the system SHALL write a JSON file containing every mutant result, the overall score, project metadata, and an ISO-8601 timestamp
-
-### Requirement: HTML report
-The system SHALL write an HTML report with sortable result tables and per-mutant diff views.
-
-#### Scenario: Generate HTML report after a run
-- **WHEN** the user requests an HTML report
-- **THEN** the system SHALL write an HTML file containing a sortable table of mutants, their results, and expandable diff views for each mutant
 
 ### Requirement: Configurable report output path
 The system SHALL allow the user to configure the directory or file path for generated reports, or `-` for stdout.
@@ -57,11 +33,3 @@ The system SHALL allow the user to configure the directory or file path for gene
 #### Scenario: Dash without format is inert
 - **WHEN** the user passes `--report-output -` without `--report-format`
 - **THEN** the system SHALL behave as today (no report generated, no stdout report content)
-
-### Requirement: Reports include timestamps and project metadata
-The system SHALL include a generation timestamp and project metadata in every JSON and HTML report.
-
-#### Scenario: Read report metadata
-- **WHEN** a JSON or HTML report is generated
-- **THEN** the report SHALL contain a generation timestamp and project metadata such as source paths and tool version
-

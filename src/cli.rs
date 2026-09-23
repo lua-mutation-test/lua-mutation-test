@@ -76,7 +76,11 @@ pub struct RunArgs {
     #[arg(long)]
     pub report_format: Option<String>,
 
-    /// Output path for the generated report.
+    /// Output path for the generated report. Use `-` to write to stdout.
+    ///
+    /// When `-` is used together with `--report-format`, the report goes to
+    /// stdout and the `Mutation score:` summary moves to stderr so stdout
+    /// stays pipe-parseable (e.g. `... --report-output - | jq`).
     #[arg(long)]
     pub report_output: Option<PathBuf>,
 
@@ -223,6 +227,26 @@ mod tests {
                 assert_eq!(args.timeout, Some(30));
                 assert_eq!(args.report_format, Some("json".to_string()));
                 assert_eq!(args.report_output, Some(PathBuf::from("report.json")));
+            }
+            _ => panic!("expected run subcommand"),
+        }
+    }
+
+    #[test]
+    fn parses_report_output_dash_as_stdout() {
+        let cli = Cli::parse_from([
+            "lua-mutation-test",
+            "run",
+            "src",
+            "--report-format",
+            "json",
+            "--report-output",
+            "-",
+        ]);
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.report_format, Some("json".to_string()));
+                assert_eq!(args.report_output, Some(PathBuf::from("-")));
             }
             _ => panic!("expected run subcommand"),
         }

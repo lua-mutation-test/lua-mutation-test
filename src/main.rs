@@ -7,7 +7,7 @@ use lua_mutation_test::incremental;
 use lua_mutation_test::mutant::{Mutant, MutantGenerator};
 use lua_mutation_test::operators::default_operators;
 use lua_mutation_test::parser::Parser as LuaParser;
-use lua_mutation_test::report::{generate_report, ReportData, ReportFormat};
+use lua_mutation_test::report::{generate_report, is_stdout_output, ReportData, ReportFormat};
 use lua_mutation_test::runner::RunnerConfig;
 use lua_mutation_test::score::score_results;
 use lua_mutation_test::shard::Shard;
@@ -299,7 +299,12 @@ where
 
     // Score and report.
     let score = score_results(&results);
-    println!(
+    // In `-` mode stdout must carry only report content so `| jq` works:
+    // the human-readable summary moves to stderr. Requires both
+    // `--report-format` and `--report-output -`; a lone `-` is inert.
+    let stdout_report = args.report_format().is_some()
+        && is_stdout_output(args.report_output().as_deref());
+    let summary = format!(
         "Mutation score: {:.2}% (killed {}, survived {}, timed out {}, errored {}, equivalent {}, cached {}, ran {})",
         score.overall.percentage().unwrap_or(0.0),
         score.overall.killed,
@@ -310,6 +315,11 @@ where
         incremental_result.cached,
         incremental_result.ran,
     );
+    if stdout_report {
+        eprintln!("{summary}");
+    } else {
+        println!("{summary}");
+    }
 
     if let Some(format) = args.report_format() {
         let format: ReportFormat = format.parse().map_err(|e: String| e)?;

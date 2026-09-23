@@ -47,6 +47,24 @@ pub struct ReportData<'a> {
     pub source_paths: &'a [PathBuf],
 }
 
+/// Returns true when `output` selects stdout (`-`, Unix convention).
+///
+/// Only a single dash means stdout; the literal word `stdout` remains a
+/// regular file path to avoid colliding with a file named `stdout`.
+pub fn is_stdout_output(output: Option<&Path>) -> bool {
+    matches!(output, Some(path) if path.as_os_str() == "-")
+}
+
+/// Formats report `content` for stdout: identical bytes plus a trailing
+/// newline when missing, so piped consumers see a complete final line.
+fn stdout_report_bytes(content: &str) -> String {
+    if content.ends_with('\n') {
+        content.to_string()
+    } else {
+        format!("{content}\n")
+    }
+}
+
 /// Generates a report of the requested format.
 pub fn generate_report(
     format: ReportFormat,
@@ -63,7 +81,11 @@ pub fn generate_report(
     };
 
     if let Some(path) = output {
-        std::fs::write(path, &content).map_err(|e| e.to_string())?;
+        if is_stdout_output(Some(path)) {
+            print!("{}", stdout_report_bytes(&content));
+        } else {
+            std::fs::write(path, &content).map_err(|e| e.to_string())?;
+        }
     }
 
     Ok(content)
@@ -1290,6 +1312,61 @@ mod tests {
         let contents = std::fs::read_to_string(&tmp).unwrap();
         assert_eq!(contents, report);
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn dash_means_stdout_and_stdout_word_is_a_file() {
+        assert!(is_stdout_output(Some(Path::new("-"))));
+        assert!(!is_stdout_output(None));
+        assert!(!is_stdout_output(Some(Path::new("stdout"))));
+        assert!(!is_stdout_output(Some(Path::new("./-"))));
+        assert!(!is_stdout_output(Some(Path::new("report.json"))));
+    }
+
+    #[test]
+    fn stdout_bytes_add_trailing_newline_when_missing() {
+        assert_eq!(stdout_report_bytes("abc"), "abc\n");
+        assert_eq!(stdout_report_bytes("abc\n"), "abc\n");
+        assert_eq!(stdout_report_bytes(""), "\n");
+    }
+
+    #[test]
+    fn dash_returns_same_bytes_as_file_without_creating_dash_file() {
+        let file_report =
+            generate_report(ReportFormat::Json, dummy_data(), None).unwrap();
+        let stdout_report =
+            generate_report(ReportFormat::Json, dummy_data(), Some(Path::new("-"))).unwrap();
+        // `generated_at` is a wall-clock timestamp: compare parsed JSON
+        // with the timestamp stripped for byte-identity of the payload.
+        let mut file_json: serde_json::Value = serde_json::from_str(&file_report).unwrap();
+        let mut stdout_json: serde_json::Value =
+            serde_json::from_str(&stdout_report).unwrap();
+        for value in [&mut file_json, &mut stdout_json] {
+            if let Some(meta) = value.get_mut("metadata") {
+                if let Some(obj) = meta.as_object_mut() {
+                    obj.remove("generated_at");
+                }
+            }
+        }
+        assert_eq!(stdout_json, file_json);
+        assert!(stdout_report.contains("\"results\""));
+        // The `-` sink must not create a file named `-` in the cwd.
+        assert!(
+            !Path::new("-").exists(),
+            "report with `-` output must not create a file named `-`"
+        );
+    }
+
+    #[test]
+    fn literal_stdout_word_writes_regular_file() {
+        let dir = std::env::temp_dir().join(format!("lmt-stdout-word-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("stdout");
+        let report =
+            generate_report(ReportFormat::Summary, dummy_data(), Some(&target)).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), report);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
