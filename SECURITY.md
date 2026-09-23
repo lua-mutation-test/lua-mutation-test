@@ -16,7 +16,7 @@ releases remain `0.x` while the API stabilizes.
 Do **not** open a public issue for security vulnerabilities.
 
 Email the maintainer privately (see GitHub profile) or use
-[private vulnerability reporting](https://github.com/rcasia/lua-mutation-test/security/advisories/new)
+[private vulnerability reporting](https://github.com/lua-mutation-test/lua-mutation-test/security/advisories/new)
 with:
 
 - Affected version (`lmut --version`)

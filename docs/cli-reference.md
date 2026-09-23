@@ -41,16 +41,82 @@ lmut run [PATH] [OPTIONS]
 |--------|-------------|
 | `--test-command <COMMAND>` | Custom shell command used to run tests. |
 | `--timeout <SECONDS>` | Timeout in seconds for each mutant test run. |
+| `--workers <N>` | Number of parallel workers for mutant execution. Overrides the `parallelism` config value. Defaults to the number of available CPUs. |
+| `--changed-since <git-ref>` | Only mutate source files changed since the given git ref (e.g. `origin/main`). See [Changed-files mode](#changed-files-mode) below. |
 | `--report-format <FORMAT>` | Report format: `summary`, `per-mutant`, `json`, `ctrf`, `html`, `stryker`. |
 | `--report-output <PATH>` | Write the generated report to this path. |
+
+Results are cached incrementally in `.lua-mutation-test/cache/`: mutants that
+already ran with unchanged sources and configuration are reused from cache
+instead of re-executed. The summary line reports both counts
+(`... cached <N>, ran <M>`).
 
 #### Examples
 
 ```bash
 lmut run src
 lmut run file.lua --test-command 'busted' --timeout 30 --report-format json
+lmut run src --workers 4
+lmut run --changed-since origin/main
 lmut run src --report-format ctrf --report-output ctrf-report.json
 lmut run src --report-format stryker --report-output mutation-testing-report.json
+```
+
+#### Changed-files mode
+
+`--changed-since <git-ref>` scopes mutant generation to source files
+differing from the base ref, for fast PR feedback:
+
+```bash
+git fetch origin
+lmut run --changed-since origin/main
+```
+
+Behavior:
+
+- The changed set is computed inside `lmut` from `merge-base(HEAD, <ref>)`
+  plus uncommitted working-tree changes, then intersected with discovered
+  sources (positional `path`, `source_globs`, filters). Changed test files
+  are added to the baseline run even when `path` points at sources only.
+- The run prints a scope banner (`scoped to N file(s) changed since <ref>`)
+  and otherwise behaves like a normal run: same summary line (including
+  `cached`/`ran`), same reports (covering only scoped results), same config.
+  Scores are diff-scoped, not whole-project scores.
+- An empty scope (e.g. a docs-only PR) prints the normal summary with zero
+  counts and exits `0`.
+- Errors exit with code `2`: an unknown or unresolvable ref (the message
+  names the ref), or running outside a git work tree (`--changed-since`
+  requires git).
+
+### `watch`
+
+Watch source files and re-run mutation tests incrementally when they change.
+Performs an initial `run`, then re-runs affected mutants on every change.
+
+```bash
+lmut watch <PATH> [OPTIONS]
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `<PATH>` | Path to a Lua file or directory to mutate. |
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `--test-command <COMMAND>` | Custom shell command used to run tests. |
+| `--timeout <SECONDS>` | Timeout in seconds for each mutant test run. |
+| `--debounce <MS>` | Debounce duration in milliseconds before re-running after a file change. Defaults to `500`. |
+| `--workers <N>` | Number of parallel workers for mutant execution. Overrides the `parallelism` config value. Defaults to the number of available CPUs. |
+
+#### Examples
+
+```bash
+lmut watch src
+lmut watch src --test-command 'busted' --debounce 250
 ```
 
 ### `list-mutants`
@@ -109,6 +175,8 @@ includes, excludes, and test-runner settings.
 | `difficulty` | string | `"very_easy"`, `"easy"`, `"normal"`, `"medium"`, `"hard"`, `"very_hard"`. Controls the per-operator-per-item mutant cap. Default is `"very_hard"`. |
 | `operators.include` | list of strings | Only run these operator ids. |
 | `operators.exclude` | list of strings | Skip these operator ids. |
+| `parallelism` | integer | Number of parallel workers for mutant execution. The `--workers` CLI flag takes precedence when both are set. |
+| `output` | list of strings | Report output formats. |
 
 #### Difficulty levels
 
@@ -124,8 +192,6 @@ faster while still visiting every mutable site.
 | `medium` | 5 |
 | `hard` | 10 |
 | `very_hard` | unlimited |
-| `parallelism` | integer | Number of concurrent mutant runs. |
-| `output` | list of strings | Report output formats. |
 
 Use `lmut list-operators` to see available operator ids.
 

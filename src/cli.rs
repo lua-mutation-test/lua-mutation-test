@@ -13,7 +13,7 @@ use std::path::PathBuf;
     long_about = None
 )]
 #[command(
-    after_help = "EXAMPLES:\n  lmut run\n  lmut run src\n  lmut run file.lua --test-command 'busted'\n  lmut list-operators\n  lmut init"
+    after_help = "EXAMPLES:\n  lmut run\n  lmut run src\n  lmut run file.lua --test-command 'busted'\n  lmut run --changed-since origin/main\n  lmut list-operators\n  lmut init"
 )]
 pub struct Cli {
     /// Path to a configuration file.
@@ -83,6 +83,10 @@ pub struct RunArgs {
     /// Number of parallel workers for mutant execution.
     #[arg(long)]
     pub workers: Option<usize>,
+
+    /// Only mutate files changed since the given git ref (e.g. --changed-since origin/main).
+    #[arg(long, value_name = "git-ref")]
+    pub changed_since: Option<String>,
 }
 
 /// Arguments for the `watch` subcommand.
@@ -164,6 +168,43 @@ mod tests {
             }
             _ => panic!("expected run subcommand"),
         }
+    }
+
+    #[test]
+    fn parses_changed_since_flag() {
+        let cli = Cli::parse_from(["lua-mutation-test", "run", "--changed-since", "origin/main"]);
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.changed_since, Some("origin/main".to_string()));
+            }
+            _ => panic!("expected run subcommand"),
+        }
+    }
+
+    #[test]
+    fn changed_since_defaults_to_none() {
+        let cli = Cli::parse_from(["lua-mutation-test", "run", "src"]);
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.changed_since, None);
+            }
+            _ => panic!("expected run subcommand"),
+        }
+    }
+
+    #[test]
+    fn run_help_documents_changed_since_with_pr_example() {
+        let err = Cli::try_parse_from(["lua-mutation-test", "run", "--help"])
+            .expect_err("expected --help to exit with help text");
+        let help = err.to_string();
+        assert!(
+            help.contains("--changed-since"),
+            "run --help should document --changed-since:\n{help}"
+        );
+        assert!(
+            help.contains("origin/main"),
+            "run --help should show a PR example:\n{help}"
+        );
     }
 
     #[test]
