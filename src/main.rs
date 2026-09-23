@@ -144,9 +144,38 @@ where
         .or(args.test_command())
         .ok_or(ExitError::cli("no test command configured"))?;
 
+    // Resolve the --changed-since scope before discovery so changed test
+    // files can join the baseline run and sources can be filtered below.
+    // Errors name the ref and propagate as CLI errors (exit code 2).
+    let changed_scope = match args.changed_since() {
+        Some(base_ref) => {
+            let git_dir = if path.is_file() {
+                path.parent().unwrap_or(Path::new(".")).to_path_buf()
+            } else {
+                path.to_path_buf()
+            };
+            let changed = lua_mutation_test::incremental::change_detection::changed_since_files(
+                &git_dir, &base_ref,
+            )?;
+            Some((base_ref, changed))
+        }
+        None => None,
+    };
+
     // Discover tests and run baseline.
     eprintln!("Discovering test files...");
-    let tests = discover_tests(path, &config.test_globs);
+    let mut tests = discover_tests(path, &config.test_globs);
+    if let Some((_, changed)) = &changed_scope {
+        // Guarantee changed test files are included even when the positional
+        // path points at sources only; the full discovered set still runs.
+        for file in changed {
+            if file.is_file() && matches_any_glob(&config.test_globs, file) && !tests.contains(file)
+            {
+                tests.push(file.clone());
+            }
+        }
+        tests.sort();
+    }
     eprintln!("  discovered {} test file(s)", tests.len());
     if tests.is_empty() {
         return Err(ExitError::cli("no test files discovered"));
@@ -162,7 +191,23 @@ where
 
     // Discover source files and generate mutants.
     eprintln!("Discovering source files...");
-    let source_files = discover_source_files(path, &config.source_globs, &config.files)?;
+    let mut source_files = discover_source_files(path, &config.source_globs, &config.files)?;
+    if let Some((base_ref, changed)) = &changed_scope {
+        // Intersect the git changed set with discovered sources so external
+        // path plumbing cannot widen the scope. An empty scope is valid
+        // (e.g. docs-only PRs): the pipeline below prints the normal
+        // zero-count summary and exits 0.
+        let changed_set: std::collections::HashSet<PathBuf> = changed
+            .iter()
+            .map(|file| canonical_or_absolute(file))
+            .collect();
+        source_files.retain(|file| changed_set.contains(&canonical_or_absolute(file)));
+        eprintln!(
+            "scoped to {} file(s) changed since {}",
+            source_files.len(),
+            base_ref
+        );
+    }
     eprintln!("  discovered {} source file(s)", source_files.len());
     eprintln!("Generating mutants...");
     let mut mutants = Vec::new();
@@ -213,7 +258,7 @@ where
         snippet_limit: 1000,
     };
 
-    let workers = args.workers().unwrap_or_else(num_cpus_like);
+    let workers = resolve_workers(args.workers(), config.parallelism);
     let incremental_result = incremental::run_incremental(
         path,
         &config,
@@ -263,6 +308,14 @@ fn num_cpus_like() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
+}
+
+/// Resolves the mutant-execution worker count: CLI `--workers` wins, then the
+/// `parallelism` config file value, then the CPU count.
+fn resolve_workers(cli_workers: Option<usize>, config_parallelism: Option<usize>) -> usize {
+    cli_workers
+        .or(config_parallelism)
+        .unwrap_or_else(num_cpus_like)
 }
 
 /// Applies the difficulty-based per-mutable-item cap, keeping at most
@@ -316,6 +369,7 @@ trait RunArgsLike {
     fn test_command(&self) -> Option<String>;
     fn timeout(&self) -> Option<u64>;
     fn workers(&self) -> Option<usize>;
+    fn changed_since(&self) -> Option<String>;
     fn report_format(&self) -> Option<String>;
     fn report_output(&self) -> Option<PathBuf>;
 }
@@ -329,6 +383,9 @@ impl RunArgsLike for RunArgs {
     }
     fn workers(&self) -> Option<usize> {
         self.workers
+    }
+    fn changed_since(&self) -> Option<String> {
+        self.changed_since.clone()
     }
     fn report_format(&self) -> Option<String> {
         self.report_format.clone()
@@ -347,6 +404,9 @@ impl RunArgsLike for WatchArgs {
     }
     fn workers(&self) -> Option<usize> {
         self.workers
+    }
+    fn changed_since(&self) -> Option<String> {
+        None
     }
     fn report_format(&self) -> Option<String> {
         None
@@ -387,6 +447,35 @@ fn discover_source_files(
 
 fn default_config_path() -> PathBuf {
     PathBuf::from(DEFAULT_CONFIG_PATH)
+}
+
+/// Best-effort canonicalization for scope comparison. Falls back to an
+/// absolute path when the file does not exist (e.g. deleted in the diff).
+fn canonical_or_absolute(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path)
+        }
+    })
+}
+
+/// Returns true when `path` matches any of the given glob patterns, either
+/// by file name or by full path.
+fn matches_any_glob(patterns: &[String], path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    let full = path.to_string_lossy();
+    patterns.iter().any(|pattern| {
+        glob::Pattern::new(pattern)
+            .map(|matcher| matcher.matches(&name) || matcher.matches(&full))
+            .unwrap_or(false)
+    })
 }
 
 fn config_from_cli(cli: &Cli) -> Config {
@@ -473,5 +562,21 @@ mod tests {
 
         let limited = apply_mutant_limit(mutants, &config);
         assert_eq!(limited.len(), 3);
+    }
+
+    #[test]
+    fn resolve_workers_prefers_cli_over_config() {
+        assert_eq!(resolve_workers(Some(8), Some(2)), 8);
+    }
+
+    #[test]
+    fn resolve_workers_falls_back_to_config_parallelism() {
+        assert_eq!(resolve_workers(None, Some(2)), 2);
+    }
+
+    #[test]
+    fn resolve_workers_defaults_to_cpu_count() {
+        assert_eq!(resolve_workers(None, None), num_cpus_like());
+        assert!(resolve_workers(None, None) >= 1);
     }
 }

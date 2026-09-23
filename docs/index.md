@@ -16,15 +16,16 @@ pass, the mutant "survived" and highlights a potential gap in test coverage.
 ## What does this project do?
 
 `lua-mutation-test` parses Lua source code with [tree-sitter](https://tree-sitter.github.io/tree-sitter/)
-and will eventually:
+to:
 
 - Generate mutants from Lua source code (operator swaps, literal flips, control-flow changes).
-- Run a given Lua test suite against each mutant.
+- Run a given Lua test suite against each mutant, in parallel with incremental caching.
 - Compute and report mutation scores.
 - Provide configurable mutation operators and ignore patterns.
 
 ## Where to go next
 
-- [Getting Started](getting-started.md) — install, build, and run the project.
+- [Getting Started](getting-started.md) — install, build, run the project, and use the GitHub Action in CI.
+- [CLI Reference](cli-reference.md) — full list of subcommands, options, and exit codes.
 - [Architecture](architecture.md) — high-level design and component overview.
 - [Architecture Decision Records](adrs/index.md) — why we chose Rust, tree-sitter, ZeroVer, and more.
