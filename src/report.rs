@@ -1068,6 +1068,23 @@ mod tests {
         }
     }
 
+    fn dummy_equivalent(reason: &str) -> MutantResult {
+        let mutant = Mutant::from_candidate(
+            CandidateMutant {
+                start_byte: 0,
+                end_byte: 0,
+                replacement: String::new(),
+            },
+            "dummy",
+            PathBuf::from("src/foo.lua"),
+            "local x = 1",
+        );
+        MutantResult::Equivalent {
+            mutant,
+            reason: reason.to_string(),
+        }
+    }
+
     fn dummy_data() -> ReportData<'static> {
         static RESULTS: std::sync::OnceLock<Vec<MutantResult>> = std::sync::OnceLock::new();
         let results = RESULTS.get_or_init(|| {
@@ -1357,6 +1374,273 @@ mod tests {
         assert_eq!(
             stryker_status(&dummy_result(Category::Equivalent)).0,
             "Ignored"
+        );
+    }
+
+    #[test]
+    fn ctrf_counts_each_category() {
+        let results = vec![
+            dummy_result(Category::Killed),
+            dummy_result(Category::Survived),
+            dummy_result(Category::TimedOut),
+            dummy_result(Category::Error),
+            dummy_equivalent("likely equivalent"),
+        ];
+        let paths = vec![PathBuf::from("src/foo.lua")];
+        let data = ReportData {
+            results: &results,
+            project_root: Path::new("."),
+            source_paths: &paths,
+        };
+
+        let report = generate_report(ReportFormat::Ctrf, data, None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let summary = &v["results"]["summary"];
+        assert_eq!(summary["tests"], 5);
+        assert_eq!(summary["passed"], 1);
+        assert_eq!(summary["failed"], 1);
+        assert_eq!(summary["skipped"], 1);
+        assert_eq!(summary["other"], 2);
+        assert_eq!(summary["pending"], 0);
+
+        let statuses: Vec<String> = v["results"]["tests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["status"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(statuses.len(), 5);
+        for expected in ["passed", "failed", "skipped", "other"] {
+            assert!(
+                statuses.iter().any(|s| s == expected),
+                "missing ctrf status {expected}: {statuses:?}"
+            );
+        }
+        assert_eq!(
+            statuses.iter().filter(|s| s.as_str() == "other").count(),
+            2,
+            "timed_out and error must both map to other: {statuses:?}"
+        );
+    }
+
+    #[test]
+    fn report_format_from_str_roundtrip() {
+        let cases = [
+            ("summary", ReportFormat::Summary),
+            ("per-mutant", ReportFormat::PerMutant),
+            ("json", ReportFormat::Json),
+            ("ctrf", ReportFormat::Ctrf),
+            ("html", ReportFormat::Html),
+            ("stryker", ReportFormat::Stryker),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                input.parse::<ReportFormat>().unwrap(),
+                expected,
+                "input: {input}"
+            );
+            assert_eq!(
+                input.to_uppercase().parse::<ReportFormat>().unwrap(),
+                expected,
+                "uppercase input: {input}"
+            );
+        }
+        assert_eq!(
+            "Summary".parse::<ReportFormat>().unwrap(),
+            ReportFormat::Summary
+        );
+        assert_eq!(
+            "Per-Mutant".parse::<ReportFormat>().unwrap(),
+            ReportFormat::PerMutant
+        );
+        let err = "bogus".parse::<ReportFormat>().unwrap_err();
+        assert!(
+            err.contains("unknown report format"),
+            "unexpected error: {err}"
+        );
+        assert!("".parse::<ReportFormat>().is_err());
+    }
+
+    #[test]
+    fn badge_thresholds() {
+        fn score_with(killed: usize, survived: usize) -> MutationScore {
+            MutationScore {
+                killed,
+                survived,
+                ..Default::default()
+            }
+        }
+
+        // N/A tier: no countable mutants.
+        assert_eq!(
+            file_score_badge_class(&MutationScore::default()),
+            "no-mutants"
+        );
+        // Red tier: below 50%.
+        assert_eq!(file_score_badge_class(&score_with(0, 1)), "low");
+        assert_eq!(file_score_badge_class(&score_with(499, 501)), "low");
+        // Yellow tier: 50% up to (not including) 80%.
+        assert_eq!(file_score_badge_class(&score_with(1, 1)), "medium");
+        assert_eq!(file_score_badge_class(&score_with(799, 201)), "medium");
+        // Green tier: 80% and above.
+        assert_eq!(file_score_badge_class(&score_with(4, 1)), "");
+        assert_eq!(file_score_badge_class(&score_with(1, 0)), "");
+
+        let low = file_score_badge_class(&score_with(0, 1));
+        let medium = file_score_badge_class(&score_with(1, 1));
+        let high = file_score_badge_class(&score_with(1, 0));
+        let na = file_score_badge_class(&MutationScore::default());
+        let mut tiers = vec![low, medium, high, na];
+        tiers.sort_unstable();
+        tiers.dedup();
+        assert_eq!(
+            tiers.len(),
+            4,
+            "expected four distinct badge classes, got low={low:?} medium={medium:?} high={high:?} na={na:?}"
+        );
+    }
+
+    #[test]
+    fn equivalent_reason_surfaced() {
+        let equivalent = vec![dummy_equivalent("likely equivalent")];
+        let killed = vec![dummy_result(Category::Killed)];
+        let paths = vec![PathBuf::from("src/foo.lua")];
+        fn data_for<'a>(results: &'a [MutantResult], paths: &'a [PathBuf]) -> ReportData<'a> {
+            ReportData {
+                results,
+                project_root: Path::new("."),
+                source_paths: paths,
+            }
+        }
+
+        let per_mutant =
+            generate_report(ReportFormat::PerMutant, data_for(&equivalent, &paths), None).unwrap();
+        assert!(
+            per_mutant.contains("(likely equivalent)"),
+            "per-mutant report must surface the reason: {per_mutant}"
+        );
+        let per_mutant_killed =
+            generate_report(ReportFormat::PerMutant, data_for(&killed, &paths), None).unwrap();
+        assert!(
+            !per_mutant_killed.contains('('),
+            "killed mutant must not gain a stray reason: {per_mutant_killed}"
+        );
+
+        let json =
+            generate_report(ReportFormat::Json, data_for(&equivalent, &paths), None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["results"][0]["reason"], "likely equivalent");
+
+        let json_killed =
+            generate_report(ReportFormat::Json, data_for(&killed, &paths), None).unwrap();
+        let vk: serde_json::Value = serde_json::from_str(&json_killed).unwrap();
+        assert!(
+            vk["results"][0]["reason"].is_null(),
+            "killed mutant must have no reason: {json_killed}"
+        );
+    }
+
+    #[test]
+    fn category_classes() {
+        let classes = [
+            category_class("killed"),
+            category_class("survived"),
+            category_class("timed_out"),
+            category_class("error"),
+            category_class("equivalent"),
+        ];
+        for class in classes {
+            assert!(!class.is_empty(), "category class must be non-empty");
+        }
+        let mut unique = classes.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            5,
+            "expected five distinct category classes, got: {classes:?}"
+        );
+        assert_eq!(category_class("bogus"), "");
+    }
+
+    #[test]
+    fn stryker_description_present_unless_both_empty() {
+        let source = "local x = 1";
+        let file = PathBuf::from("src/foo.lua");
+        let both_empty = Mutant::from_candidate(
+            CandidateMutant {
+                start_byte: 0,
+                end_byte: 0,
+                replacement: String::new(),
+            },
+            "dummy",
+            &file,
+            source,
+        );
+        let original_only = Mutant::from_candidate(
+            CandidateMutant {
+                start_byte: 10,
+                end_byte: 11,
+                replacement: String::new(),
+            },
+            "dummy",
+            &file,
+            source,
+        );
+        let replacement_only = Mutant::from_candidate(
+            CandidateMutant {
+                start_byte: 0,
+                end_byte: 0,
+                replacement: "0".to_string(),
+            },
+            "dummy",
+            &file,
+            source,
+        );
+        let mk_killed = |mutant| MutantResult::Killed {
+            mutant,
+            duration_ms: 1,
+            stdout_snippet: String::new(),
+            stderr_snippet: String::new(),
+        };
+        let results = vec![
+            mk_killed(both_empty),
+            mk_killed(original_only),
+            mk_killed(replacement_only),
+        ];
+        let paths = vec![file];
+        let data = ReportData {
+            results: &results,
+            project_root: Path::new("."),
+            source_paths: &paths,
+        };
+
+        let report = generate_report(ReportFormat::Stryker, data, None).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&report).unwrap();
+        let files = v["files"].as_object().unwrap();
+        assert_eq!(files.len(), 1);
+        let descriptions: Vec<Option<String>> = files.values().next().unwrap()["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                m["description"]
+                    .as_str()
+                    .map(std::string::ToString::to_string)
+            })
+            .collect();
+        assert_eq!(descriptions.len(), 3);
+        assert!(
+            descriptions.contains(&None),
+            "both-empty mutant must have no description: {descriptions:?}"
+        );
+        assert!(
+            descriptions.contains(&Some("1 -> ".to_string())),
+            "original-only mutant must keep its description: {descriptions:?}"
+        );
+        assert!(
+            descriptions.contains(&Some(" -> 0".to_string())),
+            "replacement-only mutant must keep its description: {descriptions:?}"
         );
     }
 }
