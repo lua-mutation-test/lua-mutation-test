@@ -87,6 +87,14 @@ pub struct RunArgs {
     /// Only mutate files changed since the given git ref (e.g. --changed-since origin/main).
     #[arg(long, value_name = "git-ref")]
     pub changed_since: Option<String>,
+
+    /// Shard selection for CI matrix fan-out, as `<k>/<n>` (e.g. `2/5`).
+    ///
+    /// Partitions the generated mutant inventory deterministically by mutant
+    /// count (stable sort by file + location + operator, then stride) so
+    /// shards stay balanced regardless of file layout.
+    #[arg(long, value_name = "K/N")]
+    pub shard: Option<String>,
 }
 
 /// Arguments for the `watch` subcommand.
@@ -110,6 +118,10 @@ pub struct WatchArgs {
     /// Number of parallel workers for mutant execution.
     #[arg(long)]
     pub workers: Option<usize>,
+
+    /// Shard selection for CI matrix fan-out, as `<k>/<n>` (e.g. `2/5`).
+    #[arg(long, value_name = "K/N")]
+    pub shard: Option<String>,
 }
 
 /// Exit codes used by the binary.
@@ -345,5 +357,27 @@ mod tests {
 
         let from_str: ExitError = "no test command configured".into();
         assert_eq!(from_str.code(), exit::CLI_ERROR);
+    }
+
+    #[test]
+    fn parses_run_subcommand_with_shard() {
+        let cli = Cli::parse_from(["lua-mutation-test", "run", "src", "--shard", "2/5"]);
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.shard, Some("2/5".to_string()));
+            }
+            _ => panic!("expected run subcommand"),
+        }
+    }
+
+    #[test]
+    fn run_shard_defaults_to_none() {
+        let cli = Cli::parse_from(["lua-mutation-test", "run", "src"]);
+        match cli.command {
+            Command::Run(args) => {
+                assert_eq!(args.shard, None);
+            }
+            _ => panic!("expected run subcommand"),
+        }
     }
 }

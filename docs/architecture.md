@@ -61,6 +61,11 @@ scores.
   mutants whose sources and configuration are unchanged; the summary line
   reports both `cached` and `ran` counts.
 - `watch` mode re-runs affected mutants when source files change.
+- `--shard <k>/<n>` partitions the generated inventory deterministically by
+  mutant count (stable sort by file + location + operator, then stride) so CI
+  matrix shards stay balanced regardless of file layout. Each shard runs its
+  stride subset through `run_incremental` unchanged and reports its own
+  summary; aggregation stays downstream's job.
 - `--changed-since <git-ref>` (changed-files mode) filters the discovered
   source list to files differing from the base ref before mutant generation,
   and unions changed test files into the baseline run. The filtered list then

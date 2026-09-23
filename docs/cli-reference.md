@@ -45,6 +45,36 @@ lmut run [PATH] [OPTIONS]
 | `--changed-since <git-ref>` | Only mutate source files changed since the given git ref (e.g. `origin/main`). See [Changed-files mode](#changed-files-mode) below. |
 | `--report-format <FORMAT>` | Report format: `summary`, `per-mutant`, `json`, `ctrf`, `html`, `stryker`. |
 | `--report-output <PATH>` | Write the generated report to this path. |
+| `--workers <N>` | Number of parallel workers for mutant execution. |
+| `--shard <K/N>` | Run only shard `K` of `N` (e.g. `--shard 2/5`). Partitions the mutant inventory deterministically by mutant count. |
+
+#### Sharding for CI matrix fan-out
+
+The only way to parallelize across CI matrix jobs without sharding is
+splitting the positional `PATH`, which skews badly (one shard gets the big
+file, the rest idle). `--shard <k>/<n>` partitions the generated mutant
+inventory deterministically by mutant count — not by file — so shards stay
+balanced regardless of file layout:
+
+- The full inventory is sorted by stable mutant identity (file + location +
+  operator) and then strided: position `i` belongs to shard `k/n` when
+  `i % n == k - 1`.
+- Sorting makes partitioning stable across runs and machines, so retries hit
+  the same mutants and the incremental cache stays coherent.
+- Each shard prints the normal summary line and exits with the normal codes;
+  aggregation across shards is downstream's job (e.g. merge JSON/CTRF reports).
+
+`--shard 1/3` + `2/3` + `3/3` cover the full inventory exactly once with sizes
+differing by at most one.
+
+```yaml
+# GitHub Actions matrix example
+strategy:
+  matrix:
+    shard: [1, 2, 3]
+steps:
+  - run: lmut run src --test-command 'busted' --shard ${{ matrix.shard }}/3
+```
 
 Results are cached incrementally in `.lua-mutation-test/cache/`: mutants that
 already ran with unchanged sources and configuration are reused from cache
@@ -60,6 +90,7 @@ lmut run src --workers 4
 lmut run --changed-since origin/main
 lmut run src --report-format ctrf --report-output ctrf-report.json
 lmut run src --report-format stryker --report-output mutation-testing-report.json
+lmut run src --shard 1/3 --report-format json --report-output shard-1.json
 ```
 
 #### Changed-files mode
