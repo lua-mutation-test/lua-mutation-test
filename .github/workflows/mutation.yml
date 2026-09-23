@@ -10,26 +10,85 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Superseded PR runs never contribute to the dashboard; cancel them.
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   mutation:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      # One slow shard must not discard the results of the others.
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4]
     steps:
+      # fetch-depth 0: needed for --in-diff on pull requests.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Install Lua
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends lua5.4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      # Shares compiled dependencies across runs; without this every shard
+      # rebuilds tree-sitter et al. from scratch on every run.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mutation
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
-      - name: Run cargo-mutants on Rust code
+      - name: Run cargo-mutants shard ${{ matrix.index }}/4
         id: mutants
         # Missed mutants are tracked on the Stryker dashboard, not gated here.
         continue-on-error: true
         run: |
-          cargo mutants -v --in-place -- -- --skip watch
+          ARGS="-v --in-place --shard ${{ matrix.index }}/4 --sharding round-robin --baseline skip --timeout 120 -j $(nproc) -o shard-out"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}" || true
+            git diff "origin/${{ github.base_ref }}...HEAD" > /tmp/pr.diff || true
+            if [ -s /tmp/pr.diff ]; then
+              ARGS="$ARGS --in-diff /tmp/pr.diff"
+            fi
+          fi
+          cargo mutants $ARGS -- -- --skip watch
+      - name: Upload shard result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutants-shard-${{ matrix.index }}
+          if-no-files-found: warn
+          path: |
+            shard-out/mutants.out/outcomes.json
+            shard-out/mutants.out/caught.txt
+            shard-out/mutants.out/missed.txt
+            shard-out/mutants.out/timeout.txt
+            shard-out/mutants.out/unviable.txt
+
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: mutation
+    if: always()
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download shard results
+        uses: actions/download-artifact@v7
+        with:
+          pattern: mutants-shard-*
+          path: shards
+      - name: Merge shard results
+        run: |
+          python3 scripts/merge-mutants-outcomes.py merged/mutants.out shards/mutants-shard-*
+          test -f merged/mutants.out/outcomes.json
       - name: Convert to Stryker report
         if: always()
         run: |
-          test -f mutants.out/outcomes.json
-          python3 scripts/cargo-mutants-to-stryker.py mutants.out "$GITHUB_WORKSPACE" mutation-testing-report.json
+          test -f merged/mutants.out/outcomes.json
+          python3 scripts/cargo-mutants-to-stryker.py merged/mutants.out "$GITHUB_WORKSPACE" mutation-testing-report.json
       - name: Upload Stryker report artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -37,16 +96,24 @@ jobs:
           name: mutation-testing-report
           path: |
             mutation-testing-report.json
-            mutants.out/outcomes.json
-            mutants.out/caught.txt
-            mutants.out/missed.txt
-            mutants.out/timeout.txt
-            mutants.out/unviable.txt
+            merged/mutants.out/outcomes.json
+            merged/mutants.out/caught.txt
+            merged/mutants.out/missed.txt
+            merged/mutants.out/timeout.txt
+            merged/mutants.out/unviable.txt
       - name: Publish to Stryker dashboard
         if: always()
         env:
           STRYKER_DASHBOARD_API_KEY: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}
         run: |
+          if [ ! -f mutation-testing-report.json ]; then
+            echo "no report to publish"
+            exit 0
+          fi
+          if [ -z "$STRYKER_DASHBOARD_API_KEY" ]; then
+            echo "STRYKER_DASHBOARD_API_KEY not set, skipping dashboard publish"
+            exit 0
+          fi
           curl -X PUT "https://dashboard.stryker-mutator.io/api/reports/github.com/lua-mutation-test/lua-mutation-test/${GITHUB_REF_NAME}" \
             -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
             -H "Content-Type: application/json" \
