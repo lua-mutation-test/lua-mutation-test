@@ -427,4 +427,151 @@ difficulty = "easy"
         assert_eq!(Difficulty::Hard.max_mutants_per_item(), Some(10));
         assert_eq!(Difficulty::VeryHard.max_mutants_per_item(), None);
     }
+
+    #[test]
+    fn difficulty_from_str_covers_all_levels() {
+        let cases = [
+            ("very_easy", Difficulty::VeryEasy),
+            ("very easy", Difficulty::VeryEasy),
+            ("easy", Difficulty::Easy),
+            ("normal", Difficulty::Normal),
+            ("medium", Difficulty::Medium),
+            ("hard", Difficulty::Hard),
+            ("very_hard", Difficulty::VeryHard),
+            ("very hard", Difficulty::VeryHard),
+            ("EASY", Difficulty::Easy),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                Difficulty::from_str(input).unwrap(),
+                expected,
+                "input: {input}"
+            );
+        }
+        let err = Difficulty::from_str("impossible").unwrap_err();
+        assert!(err.contains("impossible"), "unexpected error: {err}");
+        assert_eq!(Difficulty::VeryEasy.max_mutants_per_item(), Some(1));
+        assert_eq!(Difficulty::VeryHard.max_mutants_per_item(), None);
+    }
+
+    #[test]
+    fn merge_other_wins_when_set_self_kept_when_empty() {
+        let mut base = Config::default();
+        base.merge(Config {
+            test_command: Some("busted".to_string()),
+            framework: Some("luaunit".to_string()),
+            timeout: Some(30),
+            test_globs: vec!["spec/**/*_spec.lua".to_string()],
+            source_globs: vec!["src/**/*.lua".to_string()],
+            output: vec!["json".to_string()],
+            parallelism: Some(4),
+            operators: Filter {
+                include: vec!["arithmetic_operator".to_string()],
+                exclude: Vec::new(),
+            },
+            files: Filter {
+                include: Vec::new(),
+                exclude: vec!["vendor/*".to_string()],
+            },
+            functions: Filter {
+                include: vec!["foo".to_string()],
+                exclude: Vec::new(),
+            },
+            difficulty: Difficulty::Easy,
+            ..Config::default()
+        });
+        assert_eq!(base.test_command, Some("busted".to_string()));
+        assert_eq!(base.framework, Some("luaunit".to_string()));
+        assert_eq!(base.timeout, Some(30));
+        assert_eq!(base.test_globs, vec!["spec/**/*_spec.lua".to_string()]);
+        assert_eq!(base.source_globs, vec!["src/**/*.lua".to_string()]);
+        assert_eq!(base.output, vec!["json".to_string()]);
+        assert_eq!(base.parallelism, Some(4));
+        assert_eq!(
+            base.operators,
+            Filter {
+                include: vec!["arithmetic_operator".to_string()],
+                exclude: Vec::new(),
+            }
+        );
+        assert_eq!(
+            base.files,
+            Filter {
+                include: Vec::new(),
+                exclude: vec!["vendor/*".to_string()],
+            }
+        );
+        assert_eq!(
+            base.functions,
+            Filter {
+                include: vec!["foo".to_string()],
+                exclude: Vec::new(),
+            }
+        );
+        assert_eq!(base.difficulty, Difficulty::Easy);
+
+        let mut customized = Config {
+            test_command: Some("original".to_string()),
+            framework: Some("original".to_string()),
+            timeout: Some(5),
+            test_globs: vec!["keep.lua".to_string()],
+            source_globs: vec!["keep_src.lua".to_string()],
+            output: vec!["text".to_string()],
+            parallelism: Some(1),
+            operators: Filter {
+                include: vec!["kept_operator".to_string()],
+                exclude: Vec::new(),
+            },
+            files: Filter {
+                include: Vec::new(),
+                exclude: vec!["kept/*".to_string()],
+            },
+            functions: Filter {
+                include: vec!["kept_fn".to_string()],
+                exclude: Vec::new(),
+            },
+            difficulty: Difficulty::Hard,
+            ..Config::default()
+        };
+        let before = customized.clone();
+        // Note: `Config::default()` is NOT an empty other: its default
+        // test/source globs are non-empty and would overwrite `self`.
+        customized.merge(Config {
+            test_globs: Vec::new(),
+            source_globs: Vec::new(),
+            ..Config::default()
+        });
+        assert_eq!(customized.test_command, before.test_command);
+        assert_eq!(customized.framework, before.framework);
+        assert_eq!(customized.timeout, before.timeout);
+        assert_eq!(customized.test_globs, before.test_globs);
+        assert_eq!(customized.source_globs, before.source_globs);
+        assert_eq!(customized.output, before.output);
+        assert_eq!(customized.parallelism, before.parallelism);
+        assert_eq!(customized.operators, before.operators);
+        assert_eq!(customized.files, before.files);
+        assert_eq!(customized.functions, before.functions);
+        // Difficulty is always overwritten, even by the default.
+        assert_eq!(customized.difficulty, Difficulty::VeryHard);
+    }
+
+    #[test]
+    fn operator_weight_known_and_unknown() {
+        let config = Config::default();
+        assert_eq!(config.operator_weight("arithmetic_operator"), 100);
+        assert_eq!(config.operator_weight("relational_operator"), 90);
+        assert_eq!(config.operator_weight("logical_operator"), 80);
+        assert_eq!(config.operator_weight("condition_negation"), 70);
+        assert_eq!(config.operator_weight("control_flow"), 60);
+        assert_eq!(config.operator_weight("no_such_operator"), 0);
+    }
+
+    #[test]
+    fn matches_pattern_literal_vs_glob() {
+        assert!(matches_pattern("foo.lua", "foo.lua"));
+        assert!(!matches_pattern("foo.lua", "bar.lua"));
+        assert!(matches_pattern("foo.lua", "*.lua"));
+        assert!(matches_pattern("cat", "?at"));
+        assert!(!matches_pattern("foo.txt", "*.lua"));
+    }
 }
