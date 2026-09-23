@@ -228,4 +228,60 @@ mod tests {
         assert_eq!(score.score(), None);
         assert_eq!(score.percentage(), None);
     }
+
+    #[test]
+    fn total_counts_every_bucket() {
+        let mut score = MutationScore::default();
+        for _ in 0..1 {
+            score.add(Category::Killed);
+        }
+        for _ in 0..2 {
+            score.add(Category::Survived);
+        }
+        for _ in 0..3 {
+            score.add(Category::TimedOut);
+        }
+        for _ in 0..4 {
+            score.add(Category::Error);
+        }
+        for _ in 0..5 {
+            score.add(Category::Skipped);
+        }
+        for _ in 0..6 {
+            score.add(Category::Equivalent);
+        }
+        assert_eq!(score.total(), 21);
+    }
+
+    #[test]
+    fn denominator_excludes_timeouts_errors_equivalent() {
+        let mut score = MutationScore::default();
+        for _ in 0..2 {
+            score.add(Category::Killed);
+        }
+        score.add(Category::Survived);
+        score.add(Category::Skipped);
+        score.add(Category::TimedOut);
+        score.add(Category::Error);
+        score.add(Category::Equivalent);
+        assert_eq!(score.denominator(), 4);
+        assert_eq!(score.percentage(), Some(50.0));
+    }
+
+    #[test]
+    fn add_routes_each_category() {
+        let mut score = MutationScore::default();
+        score.add(Category::Killed);
+        score.add(Category::Survived);
+        score.add(Category::TimedOut);
+        score.add(Category::Error);
+        score.add(Category::Skipped);
+        score.add(Category::Equivalent);
+        assert_eq!(score.killed, 1);
+        assert_eq!(score.survived, 1);
+        assert_eq!(score.timed_out, 1);
+        assert_eq!(score.error, 1);
+        assert_eq!(score.skipped, 1);
+        assert_eq!(score.equivalent, 1);
+    }
 }
