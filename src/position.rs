@@ -59,4 +59,42 @@ mod tests {
         let source = "abc";
         assert!(byte_offset_to_position(source, 4).is_none());
     }
+
+    #[test]
+    fn offset_to_line_column_boundaries() {
+        let source = "ab\ncd\nef";
+        assert_eq!(
+            byte_offset_to_position(source, 0),
+            Some(Position { line: 1, column: 1 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 2),
+            Some(Position { line: 1, column: 3 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 3),
+            Some(Position { line: 2, column: 1 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 5),
+            Some(Position { line: 2, column: 3 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 6),
+            Some(Position { line: 3, column: 1 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 7),
+            Some(Position { line: 3, column: 2 })
+        );
+        assert_eq!(
+            byte_offset_to_position(source, 8),
+            Some(Position { line: 3, column: 3 })
+        );
+        assert_eq!(byte_offset_to_position(source, 9), None);
+        assert_eq!(
+            byte_offset_to_position("", 0),
+            Some(Position { line: 1, column: 1 })
+        );
+    }
 }
