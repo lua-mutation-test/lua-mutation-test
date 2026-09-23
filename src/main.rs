@@ -10,6 +10,7 @@ use lua_mutation_test::parser::Parser as LuaParser;
 use lua_mutation_test::report::{generate_report, ReportData, ReportFormat};
 use lua_mutation_test::runner::RunnerConfig;
 use lua_mutation_test::score::score_results;
+use lua_mutation_test::shard::Shard;
 use lua_mutation_test::test_discovery::discover_tests;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -245,6 +246,31 @@ where
     }
     eprintln!("  generated {} mutant(s)", mutants.len());
 
+    // Shard-aware partitioning for CI matrix fan-out (--shard k/n).
+    // Sorts by stable mutant identity (file + location + operator) and strides
+    // so shards are balanced by mutant count regardless of file layout.
+    let mut mutants = mutants;
+    if let Some(shard_str) = args.shard() {
+        let shard = Shard::parse(&shard_str)?;
+        let total_executable = mutants.len();
+        let total_equivalent = equivalent_results.len();
+        let (sharded_mutants, _) =
+            lua_mutation_test::shard::select_shard_jobs(mutants, &shard);
+        let (sharded_equivalents, _) =
+            lua_mutation_test::shard::select_shard_results(equivalent_results, &shard);
+        mutants = sharded_mutants;
+        equivalent_results = sharded_equivalents;
+        eprintln!(
+            "  shard {}/{}: selected {} of {} executable mutant(s) and {} of {} equivalent mutant(s)",
+            shard.index,
+            shard.total,
+            mutants.len(),
+            total_executable,
+            equivalent_results.len(),
+            total_equivalent,
+        );
+    }
+
     // Run each mutant incrementally.
     let timeout = config
         .timeout
@@ -372,6 +398,7 @@ trait RunArgsLike {
     fn changed_since(&self) -> Option<String>;
     fn report_format(&self) -> Option<String>;
     fn report_output(&self) -> Option<PathBuf>;
+    fn shard(&self) -> Option<String>;
 }
 
 impl RunArgsLike for RunArgs {
@@ -393,6 +420,9 @@ impl RunArgsLike for RunArgs {
     fn report_output(&self) -> Option<PathBuf> {
         self.report_output.clone()
     }
+    fn shard(&self) -> Option<String> {
+        self.shard.clone()
+    }
 }
 
 impl RunArgsLike for WatchArgs {
@@ -413,6 +443,9 @@ impl RunArgsLike for WatchArgs {
     }
     fn report_output(&self) -> Option<PathBuf> {
         None
+    }
+    fn shard(&self) -> Option<String> {
+        self.shard.clone()
     }
 }
 

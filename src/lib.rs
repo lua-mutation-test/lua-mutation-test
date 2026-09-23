@@ -15,5 +15,6 @@ pub mod report;
 pub mod result;
 pub mod runner;
 pub mod score;
+pub mod shard;
 pub mod test_discovery;
 pub mod worker_pool;

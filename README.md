@@ -152,6 +152,14 @@ lmut run src --workers 4
 lmut watch src --test-command 'busted'
 ```
 
+Shard a run across CI matrix jobs (balanced by mutant count, not by file):
+
+```bash
+lmut run src --shard 1/3
+lmut run src --shard 2/3
+lmut run src --shard 3/3
+```
+
 List available mutation operators:
 
 ```bash
