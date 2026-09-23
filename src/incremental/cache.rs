@@ -273,6 +273,16 @@ mod tests {
                 stdout_snippet: "out".to_string(),
                 stderr_snippet: "err".to_string(),
             },
+            "timed_out" => MutantResult::TimedOut {
+                mutant: mutant.clone(),
+                duration_ms: 10,
+                stdout_snippet: "out".to_string(),
+                stderr_snippet: "err".to_string(),
+            },
+            "equivalent" => MutantResult::Equivalent {
+                mutant: mutant.clone(),
+                reason: "likely equivalent".to_string(),
+            },
             _ => MutantResult::Error {
                 mutant: mutant.clone(),
                 duration_ms: 0,
@@ -299,6 +309,105 @@ mod tests {
         let entry = CacheEntry::from_result(&result, "cfg");
         let reconstructed = result_from_entry(mutant, &entry);
         assert!(matches!(reconstructed, MutantResult::Killed { .. }));
+    }
+
+    #[test]
+    fn roundtrip_survived_timed_out_equivalent() {
+        for category in ["survived", "timed_out", "equivalent"] {
+            let (result, mutant) = dummy_result(category);
+            assert_eq!(result.category(), category);
+            let entry = CacheEntry::from_result(&result, "cfg");
+            assert_eq!(entry.result_category, category);
+            let restored = result_from_entry(mutant, &entry);
+            assert_eq!(restored.category(), category);
+            match category {
+                "survived" => {
+                    assert!(matches!(restored, MutantResult::Survived { .. }));
+                    if let MutantResult::Survived {
+                        duration_ms,
+                        stdout_snippet,
+                        stderr_snippet,
+                        ..
+                    } = restored
+                    {
+                        assert_eq!(duration_ms, 10);
+                        assert_eq!(stdout_snippet, "out");
+                        assert_eq!(stderr_snippet, "err");
+                    }
+                }
+                "timed_out" => {
+                    assert!(matches!(restored, MutantResult::TimedOut { .. }));
+                    if let MutantResult::TimedOut {
+                        duration_ms,
+                        stdout_snippet,
+                        stderr_snippet,
+                        ..
+                    } = restored
+                    {
+                        assert_eq!(duration_ms, 10);
+                        assert_eq!(stdout_snippet, "out");
+                        assert_eq!(stderr_snippet, "err");
+                    }
+                }
+                "equivalent" => {
+                    assert!(matches!(restored, MutantResult::Equivalent { .. }));
+                    if let MutantResult::Equivalent { reason, .. } = restored {
+                        assert_eq!(reason, "likely equivalent");
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        // Exercise the real save -> load file path so serialization of every
+        // status is covered, not just the in-memory entry conversion.
+        let dir = tempfile::tempdir().unwrap();
+        let mut cache = CacheFile::default();
+        for category in ["survived", "timed_out", "equivalent"] {
+            let (result, _) = dummy_result(category);
+            let entry = CacheEntry::from_result(&result, "cfg");
+            let key = CacheFile::key(Path::new("src/foo.lua"), category, "cfg");
+            cache.entries.insert(key, entry);
+        }
+        cache.save(dir.path()).unwrap();
+        let loaded = CacheFile::load(dir.path());
+        assert_eq!(loaded.entries.len(), 3);
+        for category in ["survived", "timed_out", "equivalent"] {
+            let key = CacheFile::key(Path::new("src/foo.lua"), category, "cfg");
+            let entry = loaded
+                .entries
+                .get(&key)
+                .expect("entry must survive save/load");
+            assert_eq!(entry.result_category, category);
+            let (_, mutant) = dummy_result(category);
+            let restored = result_from_entry(mutant, entry);
+            assert_eq!(restored.category(), category);
+        }
+    }
+
+    #[test]
+    fn stale_version_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, _) = dummy_result("survived");
+        let entry = CacheEntry::from_result(&result, "cfg");
+        let mut cache = CacheFile::default();
+        cache
+            .entries
+            .insert("src/foo.lua#dummy#cfg".to_string(), entry);
+        cache.save(dir.path()).unwrap();
+
+        // Rewrite the file with a wrong schema version; load must not trust it.
+        let path = cache_path(dir.path());
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        value["version"] = serde_json::Value::String("stale-version".to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let loaded = CacheFile::load(dir.path());
+        assert!(
+            loaded.entries.is_empty(),
+            "stale cache version must be ignored"
+        );
     }
 
     #[test]
