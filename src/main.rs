@@ -1,7 +1,7 @@
 use clap::Parser;
 use lua_mutation_test::adapter::FrameworkAdapter;
 use lua_mutation_test::baseline::run_baseline;
-use lua_mutation_test::cli::{exit, Cli, Command, RunArgs, WatchArgs};
+use lua_mutation_test::cli::{exit, Cli, Command, ExitError, RunArgs, WatchArgs};
 use lua_mutation_test::config::{Config, DEFAULT_CONFIG_PATH};
 use lua_mutation_test::incremental;
 use lua_mutation_test::mutant::{Mutant, MutantGenerator};
@@ -28,12 +28,12 @@ fn main() -> ExitCode {
         Ok(code) => ExitCode::from(code as u8),
         Err(e) => {
             eprintln!("error: {e}");
-            ExitCode::from(exit::CLI_ERROR as u8)
+            ExitCode::from(e.code() as u8)
         }
     }
 }
 
-fn run(cli: Cli) -> Result<i32, String> {
+fn run(cli: Cli) -> Result<i32, ExitError> {
     let _ = ctrlc::set_handler(|| {
         eprintln!("\nInterrupt received, flushing cache and killing child processes...");
         lua_mutation_test::runner::kill_all_child_processes();
@@ -106,7 +106,7 @@ source_globs = ["*.lua"]
     }
 }
 
-fn run_watch(args: WatchArgs, config: Config) -> Result<i32, String> {
+fn run_watch(args: WatchArgs, config: Config) -> Result<i32, ExitError> {
     let path = args.path.clone();
     let debounce = Duration::from_millis(args.debounce);
     let args_for_watch = args.clone();
@@ -133,7 +133,7 @@ fn run_watch(args: WatchArgs, config: Config) -> Result<i32, String> {
     Ok(exit::SUCCESS)
 }
 
-fn run_pipeline<P>(path: P, args: &impl RunArgsLike, config: Config) -> Result<i32, String>
+fn run_pipeline<P>(path: P, args: &impl RunArgsLike, config: Config) -> Result<i32, ExitError>
 where
     P: AsRef<Path>,
 {
@@ -142,21 +142,21 @@ where
         .test_command
         .clone()
         .or(args.test_command())
-        .ok_or("no test command configured")?;
+        .ok_or(ExitError::cli("no test command configured"))?;
 
     // Discover tests and run baseline.
     eprintln!("Discovering test files...");
     let tests = discover_tests(path, &config.test_globs);
     eprintln!("  discovered {} test file(s)", tests.len());
     if tests.is_empty() {
-        return Err("no test files discovered".to_string());
+        return Err(ExitError::cli("no test files discovered"));
     }
     let adapter = FrameworkAdapter::from_config(config.framework.as_deref(), Some(&test_command));
     let test_refs: Vec<&Path> = tests.iter().map(|p| p.as_path()).collect();
     eprintln!("Running baseline tests...");
     let baseline = run_baseline(&adapter, &test_refs);
     if !baseline.passed() {
-        return Err("baseline test run failed; aborting".to_string());
+        return Err(ExitError::baseline("baseline test run failed; aborting"));
     }
     eprintln!("  baseline passed");
 
@@ -177,7 +177,9 @@ where
             .filter(|op| config.operators.matches(op.id()))
             .collect();
         if operators.is_empty() {
-            return Err("no mutation operators selected; check your configuration".to_string());
+            return Err(ExitError::cli(
+                "no mutation operators selected; check your configuration",
+            ));
         }
         let generator = MutantGenerator::new(operators);
         let (valid, _invalid, equivalent) = generator.generate_validated(file, &source, &tree);
@@ -358,7 +360,7 @@ fn discover_source_files(
     path: &Path,
     globs: &[String],
     filter: &lua_mutation_test::config::Filter,
-) -> Result<Vec<PathBuf>, String> {
+) -> Result<Vec<PathBuf>, ExitError> {
     let mut files = Vec::new();
     if path.is_file() {
         let file = path.to_path_buf();

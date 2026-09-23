@@ -99,7 +99,7 @@ fn watch_mode_triggers_incremental_re_run_on_file_change() {
     });
 
     let run = build_run(&root);
-    let result = watch_project(
+    let result = watch_project::<String>(
         &root,
         Duration::from_millis(50),
         move || {
