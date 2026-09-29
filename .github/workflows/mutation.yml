@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Download shard results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: mutants-shard-*
           path: shards
