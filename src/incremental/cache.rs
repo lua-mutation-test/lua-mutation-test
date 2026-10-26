@@ -218,18 +218,30 @@ pub fn cache_path(project_root: &Path) -> PathBuf {
     project_root.join(CACHE_DIR).join(CACHE_FILE)
 }
 
+/// Encodes bytes as lowercase hex without pulling in an extra crate
+/// (sha2 0.11's output type no longer implements `LowerHex`).
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xf) as usize] as char);
+    }
+    out
+}
+
 /// Computes a stable SHA-256 hash of the effective configuration.
 pub fn config_hash(config: &Config) -> String {
     let json = serde_json::to_string(config).unwrap_or_default();
     let hash = Sha256::digest(json.as_bytes());
-    format!("{:x}", hash)
+    hex_encode(&hash)
 }
 
 /// Computes the SHA-256 hash of a file's contents.
 pub fn file_hash(path: &Path) -> Result<String, String> {
     let contents = std::fs::read(path).map_err(|e| e.to_string())?;
     let hash = Sha256::digest(&contents);
-    Ok(format!("{:x}", hash))
+    Ok(hex_encode(&hash))
 }
 
 /// Computes SHA-256 hashes for a set of source files.
